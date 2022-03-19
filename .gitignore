@@ -1,0 +1,12 @@
+.DS_Store
+!.gitkeep
+_private-note/
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
