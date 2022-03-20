@@ -246,37 +246,81 @@ function checkDenoVersion(version) {
   return true;
 }
 
+function sortOutArgs() {
+  const args = {
+    targetUrl: undefined,
+    delete: false,
+    missingUrl: false,
+    name: false,
+    withPath: false,
+  };
+
+  if (Deno.args.length === 0) return args;
+
+  const availableArgs = {
+    "--delete": "delete",
+    "-d": "delete",
+    "--missing-url": "missingUrl",
+    "--name": "name",
+    "-n": "name",
+    "--url": "name",
+    "--with-path": "withPath",
+  };
+
+  const argsWithFileName = ["delete", "name"];
+
+  const tempTargetUrl = {
+    delete: undefined,
+    name: undefined,
+  };
+
+  let key = "";
+  for (const arg of Deno.args) {
+    if (Object.keys(availableArgs).includes(arg)) {
+      key = availableArgs[arg];
+      args[key] = true;
+      continue;
+    }
+
+    if (argsWithFileName.includes(key) === false) {
+      key = "name";
+    }
+
+    // Give priority to the url specified first
+    // NOTE:
+    // ??= operator does not work properly on "deno run" before Deno v1.6.2
+    // https://github.com/denoland/deno/issues/8627
+    tempTargetUrl[key] = tempTargetUrl[key] ?? arg;
+  }
+
+  // Give priority to the url specified by the delete argument
+  args.targetUrl = tempTargetUrl.delete ?? tempTargetUrl.name;
+
+  args.withPath = args.delete ? true : args.withPath;
+
+  return args;
+}
+
 function main() {
   if (checkDenoVersion(requiredMinDenoVer) === false) {
     console.log(`INFO: Deno version ${requiredMinDenoVer} or later is required`);
     Deno.exit();
   }
 
-  if (Deno.args.includes("--missing-url")) {
+  const args = sortOutArgs();
+
+  if (args.missingUrl) {
     displayPathOfFileWithMissingURL();
     Deno.exit();
   }
 
-  const targetUrl = (() => {
-    let nameIndex;
-    if (Deno.args.includes("--delete")) {
-      nameIndex = Deno.args.indexOf("--delete") + 1;
-    } else if (Deno.args.includes("--name")) {
-      nameIndex = Deno.args.indexOf("--name") + 1;
-    } else {
-      return undefined;
-    }
-
-    if (Deno.args.length > nameIndex) {
-      return Deno.args[nameIndex];
-    } else {
-      console.log("INFO: Please specify the module name");
-      Deno.exit();
-    }
-  })();
+  if ((args.name || args.delete) && args.targetUrl === undefined) {
+    console.log("INFO: Please specify the module name");
+    Deno.exit();
+  }
 
   let moduleData = {};
-  moduleData = collectModuleData(baseDepsPath, targetUrl, moduleData);
+  moduleData = collectModuleData(baseDepsPath, args.targetUrl, moduleData);
 
   const moduleCount = Object.keys(moduleData).length;
   if (moduleCount === 0) {
@@ -284,18 +328,17 @@ function main() {
     Deno.exit();
   }
 
-  if (Deno.args.includes("--with-path") || Deno.args.includes("--delete")) {
+  if (args.withPath) {
     moduleData = collectRelatedFilePath(moduleData);
   }
 
+  displayCachedModuleList(moduleData, args.withPath);
+
   switch (true) {
-    case Deno.args.includes("--delete"):
-      displayCachedModuleList(moduleData, true);
+    case args.delete:
       deleteFile(moduleData);
       break;
     default:
-      displayCachedModuleList(moduleData, Deno.args.includes("--with-path"));
-
       if (moduleCount === 1) {
         console.log(`\nTotal: ${moduleCount} module is found`);
       } else {
