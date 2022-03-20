@@ -2,26 +2,27 @@
 
 // Permission:
 // --allow-run and --allow-read permissions are required
+// --allow-run, --allow-read, and --allow-write permissions are required to run with --delete argument
 
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
-function collectURLAndHashData(depsPath, targetUrl, urlAndHashData) {
+function collectModuleData(depsPath, targetUrl, moduleData) {
   if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
 
   for (const dirEntry of Deno.readDirSync(depsPath)) {
     if (dirEntry.isDirectory) {
       const subDir = `${depsPath}/${dirEntry.name}`;
-      urlAndHashData = collectURLAndHashData(subDir, targetUrl, urlAndHashData);
+      moduleData = collectModuleData(subDir, targetUrl, moduleData);
     } else if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
       const url = obtainURLValueFromMetadata(`${depsPath}/${dirEntry.name}`);
       if (url.includes(targetUrl) || targetUrl === undefined) {
-        urlAndHashData[url] = dirEntry.name.replace(".metadata.json", "");
+        moduleData[url] = { hash: dirEntry.name.replace(".metadata.json", "") };
       }
     }
   }
 
-  return urlAndHashData;
+  return moduleData;
 }
 
 function obtainURLValueFromMetadata(metadataFilePath) {
@@ -70,38 +71,84 @@ function buildBaseFilePath(url, hash) {
   return { depsHashedPath, genHashedPath, genUrlPath };
 }
 
-function collectRelatedFilePath(url, hash) {
-  const {
-    depsHashedPath,
-    genHashedPath,
-    genUrlPath,
-  } = buildBaseFilePath(url, hash);
+function collectRelatedFilePath(moduleData) {
+  for (const url of Object.keys(moduleData)) {
+    const {
+      depsHashedPath,
+      genHashedPath,
+      genUrlPath,
+    } = buildBaseFilePath(url, moduleData[url].hash);
 
-  const extentionsInDeps = ["", ".metadata.json"];
+    const extentionsInDeps = ["", ".metadata.json"];
 
-  // REVIEW:
-  // I have never seen .d.ts file created in the gen/http(s) directory.
-  // Is it necessary to handle the .d.ts extention?
-  // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
-  const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
+    // REVIEW:
+    // I have never seen .d.ts file created in the gen/http(s) directory.
+    // Is it necessary to handle the .d.ts extention?
+    // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
+    const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
 
-  const pathList = [];
+    const pathList = [];
 
-  for (const ext of extentionsInDeps) {
-    pathList.push(depsHashedPath + ext);
-  }
-
-  for (const path of [genHashedPath, genUrlPath]) {
-    for (const ext of extentionsInGen) {
-      pathList.push(path + ext);
+    for (const ext of extentionsInDeps) {
+      pathList.push(depsHashedPath + ext);
     }
+
+    for (const path of [genHashedPath, genUrlPath]) {
+      for (const ext of extentionsInGen) {
+        pathList.push(path + ext);
+      }
+    }
+
+    moduleData[url].relatedFilePath = pathList.filter((path) => isFileExist(path));
   }
 
-  return pathList.filter((path) => isFileExist(path));
+  return moduleData;
 }
 
-function displayCachedModuleList(urlAndHashData, withPath = false) {
-  for (const url of Object.keys(urlAndHashData).sort()) {
+// TODO:
+// Empty folders are not deleted
+function deleteFile(moduleData) {
+  const deleteFilePathList = [];
+  for (const url of Object.keys(moduleData)) {
+    deleteFilePathList.push(moduleData[url].relatedFilePath);
+  }
+
+  const fileCount = deleteFilePathList.flat().length;
+
+  let message;
+  if (fileCount === 0) {
+    return;
+  } else if (fileCount === 1) {
+    message = "\nThis operation cannot be undone.\n" +
+      `Are you sure you want to delete the above ${fileCount} file? (y/N): `;
+  } else {
+    message = "\nThis operation cannot be undone.\n" +
+      `Are you sure you want to delete the above ${fileCount} files? (y/N): `;
+  }
+
+  Deno.stdout.writeSync(new TextEncoder().encode(message));
+
+  const buf = new Uint8Array(1024);
+  const n = Deno.stdin.readSync(buf);
+  const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
+
+  if (input.toLowerCase() !== "y") {
+    Deno.exit();
+  }
+
+  for (const path of deleteFilePathList.flat()) {
+    try {
+      Deno.removeSync(path);
+      console.log(`DELETED: ${path}`);
+    } catch (e) {
+      console.error(e);
+      Deno.exit(1);
+    }
+  }
+}
+
+function displayCachedModuleList(moduleData, withPath = false) {
+  for (const url of Object.keys(moduleData).sort()) {
     if (withPath && Deno.noColor === false) {
       console.log(`\x1b[1m${url}\x1b[0m`);
     } else {
@@ -109,14 +156,10 @@ function displayCachedModuleList(urlAndHashData, withPath = false) {
     }
 
     if (withPath) {
-      displayRelatedFilePathList(url, urlAndHashData[url]);
+      for (const path of moduleData[url].relatedFilePath) {
+        console.log(` - ${path}`);
+      }
     }
-  }
-}
-
-function displayRelatedFilePathList(url, hash) {
-  for (const path of collectRelatedFilePath(url, hash)) {
-    console.log(` - ${path}`);
   }
 }
 
@@ -139,7 +182,9 @@ function main() {
 
   const targetUrl = (() => {
     let nameIndex;
-    if (Deno.args.includes("--name")) {
+    if (Deno.args.includes("--delete")) {
+      nameIndex = Deno.args.indexOf("--delete") + 1;
+    } else if (Deno.args.includes("--name")) {
       nameIndex = Deno.args.indexOf("--name") + 1;
     } else {
       return undefined;
@@ -153,21 +198,32 @@ function main() {
     }
   })();
 
-  let urlAndHashData = {};
-  urlAndHashData = collectURLAndHashData(baseDepsPath, targetUrl, urlAndHashData);
+  let moduleData = {};
+  moduleData = collectModuleData(baseDepsPath, targetUrl, moduleData);
 
-  const moduleCount = Object.keys(urlAndHashData).length;
+  const moduleCount = Object.keys(moduleData).length;
   if (moduleCount === 0) {
     console.log("INFO: No modules are found");
     Deno.exit();
   }
 
-  displayCachedModuleList(urlAndHashData, Deno.args.includes("--with-path"));
+  if (Deno.args.includes("--with-path") || Deno.args.includes("--delete")) {
+    moduleData = collectRelatedFilePath(moduleData);
+  }
 
-  if (moduleCount === 1) {
-    console.log(`\nTotal: ${moduleCount} module is found`);
-  } else {
-    console.log(`\nTotal: ${moduleCount} modules are found`);
+  switch (true) {
+    case Deno.args.includes("--delete"):
+      displayCachedModuleList(moduleData, true);
+      deleteFile(moduleData);
+      break;
+    default:
+      displayCachedModuleList(moduleData, Deno.args.includes("--with-path"));
+
+      if (moduleCount === 1) {
+        console.log(`\nTotal: ${moduleCount} module is found`);
+      } else {
+        console.log(`\nTotal: ${moduleCount} modules are found`);
+      }
   }
 }
 
