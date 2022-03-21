@@ -235,6 +235,24 @@ function displayPathOfFileWithMissingURL() {
   }
 }
 
+function displayHelp() {
+  const t = " ".repeat(4);
+  console.log("Deno module cache manager\n");
+  console.log("USAGE:");
+  console.log(`${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager <url-or-path-to-cli.js>`);
+  console.log(`${t}deno-module-cache-manager [OPTIONS]\n`);
+  console.log("OPTIONS:");
+  console.log(`${t}-d, --delete <MODULE_URL>     ${t}Delete cached module files`);
+  console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
+  console.log(`${t}                              ${t}and files related to the matched module URLs are objects of deletion`);
+  console.log(`${t}-h, --help                    ${t}Print help information`);
+  console.log(`${t}    --missing-url             ${t}Print paths of cached module files whose URLs are missing`);
+  console.log(`${t}-n, --name, --url <MODULE_URL>${t}Print URLs of cached modules`);
+  console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
+  console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
+  console.log(`${t}    --with-path               ${t}Print URLs of cached modules along with paths of files related to them`);
+}
+
 function checkDenoVersion(version) {
   const requiredVersion = version.split(".").map((n) => Number(n));
   const currentVersion = Deno.version.deno.split(".").map((n) => Number(n));
@@ -250,6 +268,7 @@ function sortOutArgs() {
   const args = {
     targetUrl: undefined,
     delete: false,
+    help: false,
     missingUrl: false,
     name: false,
     withPath: false,
@@ -260,6 +279,8 @@ function sortOutArgs() {
   const availableArgs = {
     "--delete": "delete",
     "-d": "delete",
+    "--help": "help",
+    "-h": "help",
     "--missing-url": "missingUrl",
     "--name": "name",
     "-n": "name",
@@ -308,6 +329,11 @@ function main() {
   }
 
   const args = sortOutArgs();
+
+  if (args.help) {
+    displayHelp();
+    Deno.exit();
+  }
 
   if (args.missingUrl) {
     displayPathOfFileWithMissingURL();
