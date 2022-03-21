@@ -147,6 +147,100 @@ function collectAllHashedFilePath(type = "") {
   return pathList;
 }
 
+// OPTIMIZE:
+// If the number of cached modules is large,
+// execution will take noticeably longer.
+async function collectAllDepsModuleURL() {
+  const allModuleData = collectModuleData(baseDepsPath, "", {});
+
+  const depsModuleUrl = new Set();
+
+  const regexpToFilterUrl = new RegExp("\\shttps?://");
+  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
+  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
+
+  let counter = 0;
+  const total = Object.keys(allModuleData).length;
+  displayProgress(counter, total, "modules checked");
+
+  for (const url of Object.keys(allModuleData)) {
+    // WARNING:
+    // If the output format of "deno info" changes in the future,
+    // this function may not work as expected.
+
+    // NOTE:
+    // Output with "--json" option is difficult to use
+    // because the format changes significantly depending on the Deno version.
+    const process = Deno.run({
+      cmd: ["deno", "info", url],
+      env: { NO_COLOR: "1" },
+      stdout: "piped",
+      stderr: "piped",
+    });
+
+    // NOTE:
+    // https://github.com/denoland/deno/issues/4568
+    const [stderr, stdout, status] = await Promise.all([
+      process.stderrOutput(),
+      process.output(),
+      process.status(),
+    ]);
+
+    if (status.success) {
+      const output = new TextDecoder()
+        .decode(stdout)
+        .split("\n")
+        .filter((line) => regexpToFilterUrl.test(line))
+        .map((line) => {
+          return line
+            .trim()
+            .replace(regexpToRemoveBeforeUrl, "http")
+            .replace(regexpToRemoveAfterUrl, "");
+        });
+
+      process.close();
+
+      for (const url of output) {
+        depsModuleUrl.add(url);
+      }
+
+      displayProgress(++counter, total, "modules checked");
+    } else {
+      const errorString = new TextDecoder().decode(stderr);
+      console.log(errorString);
+      displayCursor();
+
+      process.close();
+      Deno.exit(status.code);
+    }
+  }
+
+  return depsModuleUrl;
+}
+
+async function extractLeavesModuleData(moduleData) {
+  const message = "It may take a very long time. Are you sure you want to start the process? (y/N): ";
+  Deno.stdout.writeSync(new TextEncoder().encode(message));
+
+  const buf = new Uint8Array(1024);
+  const n = Deno.stdin.readSync(buf);
+  const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
+
+  if (input.toLowerCase() !== "y") {
+    Deno.exit();
+  }
+
+  const depsModuleUrl = await collectAllDepsModuleURL();
+  const leaves = {};
+
+  for (const url of Object.keys(moduleData)) {
+    if (depsModuleUrl.has(url)) continue;
+    leaves[url] = moduleData[url];
+  }
+
+  return leaves;
+}
+
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
@@ -231,6 +325,61 @@ function displayPathOfFileWithMissingURL() {
   }
 }
 
+function displayCursor(show = true) {
+  // NOTE:
+  // Before Deno v1.14.0, handling OS signals was unstable.
+  // To ensure that the cursor is recovered when SIGINT etc. occurs,
+  // cursor display control only be performed in Deno v1.14.0 or later.
+  // https://github.com/denoland/deno/pull/12512
+  //
+  // Handling OS signals is currently not available on Windows.
+  // Therefore, Windows is also excluded.
+  // https://deno.land/manual@v1.20.1/examples/os_signals
+  if (checkDenoVersion("1.14.0") === false) return;
+  if (Deno.build.os === "windows") return;
+
+  const showCursor = () => {
+    Deno.stdout.writeSync(new TextEncoder().encode("\x1b[?25h"));
+  };
+
+  const hideCursor = () => {
+    Deno.stdout.writeSync(new TextEncoder().encode("\x1b[?25l"));
+  };
+
+  // NOTE:
+  // Deno (Rust) cannot catch SIGKILL
+  // https://github.com/denoland/deno/blob/v1.20.1/runtime/js/40_signals.js#L12-L14
+  // https://github.com/denoland/deno/blob/v1.20.1/runtime/ops/signal.rs#L183-L188
+  // https://github.com/vorner/signal-hook/blob/v0.3.13/signal-hook-registry/src/lib.rs#L392
+  if (show) {
+    showCursor();
+    Deno.removeSignalListener("SIGINT", showCursor);
+    Deno.removeSignalListener("SIGTERM", showCursor);
+  } else {
+    hideCursor();
+    Deno.addSignalListener("SIGINT", showCursor);
+    Deno.addSignalListener("SIGTERM", showCursor);
+  }
+}
+
+function displayProgress(current, total, suffix = "done") {
+  const digits = String(total).length;
+  const text = ` * ${String(current).padStart(digits, " ")} / ${total} ${suffix}`;
+
+  if (current === 0) {
+    displayCursor(false);
+  }
+
+  Deno.stdout.writeSync(new TextEncoder().encode(text));
+
+  if (current < total) {
+    Deno.stdout.writeSync(new TextEncoder().encode("\r"));
+  } else {
+    Deno.stdout.writeSync(new TextEncoder().encode("\r\x1b[2K"));
+    displayCursor(true);
+  }
+}
+
 function displayHelp() {
   const t = " ".repeat(4);
   console.log("Deno module cache manager\n");
@@ -242,6 +391,7 @@ function displayHelp() {
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
   console.log(`${t}                              ${t}and files related to the matched module URLs are objects of deletion`);
   console.log(`${t}-h, --help                    ${t}Print help information`);
+  console.log(`${t}    --leaves                  ${t}Print URLs of cached modules that are not dependencies of another cached modules`);
   console.log(`${t}    --missing-url             ${t}Print paths of cached module files whose URLs are missing`);
   console.log(`${t}-n, --name, --url <MODULE_URL>${t}Print URLs of cached modules`);
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
@@ -265,6 +415,7 @@ function sortOutArgs() {
     targetUrl: undefined,
     delete: false,
     help: false,
+    leaves: false,
     missingUrl: false,
     name: false,
     withPath: false,
@@ -277,6 +428,7 @@ function sortOutArgs() {
     "-d": "delete",
     "--help": "help",
     "-h": "help",
+    "--leaves": "leaves",
     "--missing-url": "missingUrl",
     "--name": "name",
     "-n": "name",
@@ -318,7 +470,7 @@ function sortOutArgs() {
   return args;
 }
 
-function main() {
+async function main() {
   if (checkDenoVersion(requiredMinDenoVer) === false) {
     console.log(`INFO: Deno version ${requiredMinDenoVer} or later is required`);
     Deno.exit();
@@ -343,6 +495,10 @@ function main() {
 
   let moduleData = {};
   moduleData = collectModuleData(baseDepsPath, args.targetUrl, moduleData);
+
+  if (args.leaves) {
+    moduleData = await extractLeavesModuleData(moduleData);
+  }
 
   const moduleCount = Object.keys(moduleData).length;
   if (moduleCount === 0) {
