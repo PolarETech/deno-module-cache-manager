@@ -1,3 +1,5 @@
+// Copyright 2022 Polar Tech. All rights reserved. MIT license.
+
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
