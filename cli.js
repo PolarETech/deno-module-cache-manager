@@ -1,9 +1,3 @@
-// Deno version: v1.2.0 or later
-
-// Permission:
-// --allow-run and --allow-read permissions are required
-// --allow-run, --allow-read, and --allow-write permissions are required to run with --delete argument
-
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
