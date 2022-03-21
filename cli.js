@@ -219,14 +219,7 @@ async function collectAllDepsModuleURL() {
 }
 
 async function extractLeavesModuleData(moduleData) {
-  const message = "It may take a very long time. Are you sure you want to start the process? (y/N): ";
-  Deno.stdout.writeSync(new TextEncoder().encode(message));
-
-  const buf = new Uint8Array(1024);
-  const n = Deno.stdin.readSync(buf);
-  const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
-
-  if (input.toLowerCase() !== "y") {
+  if (displayConfirmationMessage({ name: "leaves" }) === false) {
     Deno.exit();
   }
 
@@ -251,24 +244,9 @@ function deleteFile(moduleData) {
 
   const fileCount = deleteFilePathList.flat().length;
 
-  let message;
-  if (fileCount === 0) {
-    return;
-  } else if (fileCount === 1) {
-    message = "\nThis operation cannot be undone.\n" +
-      `Are you sure you want to delete the above ${fileCount} file? (y/N): `;
-  } else {
-    message = "\nThis operation cannot be undone.\n" +
-      `Are you sure you want to delete the above ${fileCount} files? (y/N): `;
-  }
+  if (fileCount === 0) return;
 
-  Deno.stdout.writeSync(new TextEncoder().encode(message));
-
-  const buf = new Uint8Array(1024);
-  const n = Deno.stdin.readSync(buf);
-  const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
-
-  if (input.toLowerCase() !== "y") {
+  if (displayConfirmationMessage({ name: "delete", fileCount }) === false) {
     Deno.exit();
   }
 
@@ -317,11 +295,9 @@ function displayPathOfFileWithMissingURL() {
   }
 
   if (fileCount === 0) {
-    console.log("INFO: No files are found");
-  } else if (fileCount === 1) {
-    console.log(`\nTotal: ${fileCount} file is found`);
+    displayResultMessage({ name: "foundNoFile" });
   } else {
-    console.log(`\nTotal: ${fileCount} files are found`);
+    displayResultMessage({ name: "foundFile", fileCount });
   }
 }
 
@@ -378,6 +354,66 @@ function displayProgress(current, total, suffix = "done") {
     Deno.stdout.writeSync(new TextEncoder().encode("\r\x1b[2K"));
     displayCursor(true);
   }
+}
+
+function displayConfirmationMessage(type) {
+  const message = (() => {
+    switch (type.name) {
+      case "delete":
+        if (type.fileCount === 1) {
+          return "\nThis operation cannot be undone.\n" +
+            `Are you sure you want to delete the above ${type.fileCount} file? (y/N): `;
+        } else {
+          return "\nThis operation cannot be undone.\n" +
+            `Are you sure you want to delete the above ${type.fileCount} files? (y/N): `;
+        }
+      case "leaves":
+        return "It may take a very long time. Are you sure you want to start the process? (y/N): ";
+      default:
+        return undefined;
+    }
+  })();
+
+  if (message === undefined) return false;
+
+  Deno.stdout.writeSync(new TextEncoder().encode(message));
+
+  const buf = new Uint8Array(1024);
+  const n = Deno.stdin.readSync(buf);
+  const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
+
+  return input.toLowerCase() === "y";
+}
+
+function displayResultMessage(type) {
+  const message = (() => {
+    switch (type.name) {
+      case "versionError":
+        return `INFO: Deno version ${type.version} or later is required`;
+      case "moduleNameRequired":
+        return "INFO: Please specify the module name";
+      case "foundNoModule":
+        return "INFO: No modules are found";
+      case "foundModule":
+        if (type.moduleCount === 1) {
+          return `\nTotal: ${type.moduleCount} module is found`;
+        } else {
+          return `\nTotal: ${type.moduleCount} modules are found`;
+        }
+      case "foundNoFile":
+        return "INFO: No files are found";
+      case "foundFile":
+        if (type.fileCount === 1) {
+          return `\nTotal: ${type.fileCount} file is found`;
+        } else {
+          return `\nTotal: ${type.fileCount} files are found`;
+        }
+      default:
+        return undefined;
+    }
+  })();
+
+  if (message) console.log(message);
 }
 
 function displayHelp() {
@@ -472,7 +508,7 @@ function sortOutArgs() {
 
 async function main() {
   if (checkDenoVersion(requiredMinDenoVer) === false) {
-    console.log(`INFO: Deno version ${requiredMinDenoVer} or later is required`);
+    displayResultMessage({ name: "versionError", version: requiredMinDenoVer });
     Deno.exit();
   }
 
@@ -489,7 +525,7 @@ async function main() {
   }
 
   if ((args.name || args.delete) && args.targetUrl === undefined) {
-    console.log("INFO: Please specify the module name");
+    displayResultMessage({ name: "moduleNameRequired" });
     Deno.exit();
   }
 
@@ -502,7 +538,7 @@ async function main() {
 
   const moduleCount = Object.keys(moduleData).length;
   if (moduleCount === 0) {
-    console.log("INFO: No modules are found");
+    displayResultMessage({ name: "foundNoModule" });
     Deno.exit();
   }
 
@@ -517,11 +553,7 @@ async function main() {
       deleteFile(moduleData);
       break;
     default:
-      if (moduleCount === 1) {
-        console.log(`\nTotal: ${moduleCount} module is found`);
-      } else {
-        console.log(`\nTotal: ${moduleCount} modules are found`);
-      }
+      displayResultMessage({ name: "foundModule", moduleCount });
   }
 }
 
