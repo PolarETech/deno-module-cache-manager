@@ -27,6 +27,25 @@ function obtainURLValueFromMetadata(metadataFilePath) {
   return jsonData.url;
 }
 
+function obtainDateValueFromMetadata(metadataFilePath) {
+  const text = Deno.readTextFileSync(metadataFilePath);
+  const jsonData = JSON.parse(text);
+  try {
+    // NOTE:
+    // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
+    // https://github.com/denoland/deno/pull/13010
+    if (jsonData.now && jsonData.now["secs_since_epoch"]) {
+      return new Date(jsonData.now["secs_since_epoch"] * 1000).toISOString();
+    }
+    if (jsonData.headers && jsonData.headers.date) {
+      return new Date(jsonData.headers.date).toISOString();
+    }
+    return undefined;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
 async function obtainCacheLocation() {
   // NOTE:
   // "--json" option with "deno info" was unstable before Deno v1.10
@@ -106,6 +125,14 @@ function collectRelatedFilePath(moduleData) {
     moduleData[url].relatedFilePath = pathList.filter((path) => isFileExist(path));
   }
 
+  return moduleData;
+}
+
+function collectModuleDownloadDate(moduleData) {
+  for (const url of Object.keys(moduleData)) {
+    const { depsHashedPath } = buildBaseFilePath(url, moduleData[url].hash);
+    moduleData[url].date = obtainDateValueFromMetadata(`${depsHashedPath}.metadata.json`);
+  }
   return moduleData;
 }
 
@@ -261,15 +288,34 @@ function deleteFile(moduleData) {
   }
 }
 
-function displayCachedModuleList(moduleData, withPath = false) {
-  for (const url of Object.keys(moduleData).sort()) {
-    if (withPath && Deno.noColor === false) {
-      console.log(`\x1b[1m${url}\x1b[0m`);
+function displayCachedModuleList(moduleData, args) {
+  const maxUrlLength = (() => {
+    if (args.withDate) {
+      return Object
+        .keys(moduleData)
+        .map((v) => v.length)
+        .reduce((v1, v2) => Math.max(v1, v2));
     } else {
-      console.log(url);
+      return undefined;
+    }
+  })();
+
+  for (const url of Object.keys(moduleData).sort()) {
+    if (args.withPath && Deno.noColor === false) {
+      Deno.stdout.writeSync(new TextEncoder().encode(`\x1b[1m${url}\x1b[0m`));
+    } else {
+      Deno.stdout.writeSync(new TextEncoder().encode(url));
     }
 
-    if (withPath) {
+    if (args.withDate) {
+      const prefix = " ".repeat(maxUrlLength - url.length + 2);
+      const dateString = moduleData[url].date ?? "Unknown";
+      Deno.stdout.writeSync(new TextEncoder().encode(`${prefix}${dateString}\n`));
+    } else {
+      Deno.stdout.writeSync(new TextEncoder().encode("\n"));
+    }
+
+    if (args.withPath) {
       for (const path of moduleData[url].relatedFilePath) {
         console.log(` - ${path}`);
       }
@@ -432,6 +478,7 @@ function displayHelp() {
   console.log(`${t}-n, --name, --url <MODULE_URL>${t}Print URLs of cached modules`);
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
   console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
+  console.log(`${t}    --with-date               ${t}Print URLs of cached modules along with their download date and time`);
   console.log(`${t}    --with-path               ${t}Print URLs of cached modules along with paths of files related to them`);
 }
 
@@ -454,6 +501,7 @@ function sortOutArgs() {
     leaves: false,
     missingUrl: false,
     name: false,
+    withDate: false,
     withPath: false,
   };
 
@@ -469,6 +517,7 @@ function sortOutArgs() {
     "--name": "name",
     "-n": "name",
     "--url": "name",
+    "--with-date": "withDate",
     "--with-path": "withPath",
   };
 
@@ -546,7 +595,11 @@ async function main() {
     moduleData = collectRelatedFilePath(moduleData);
   }
 
-  displayCachedModuleList(moduleData, args.withPath);
+  if (args.withDate) {
+    moduleData = collectModuleDownloadDate(moduleData);
+  }
+
+  displayCachedModuleList(moduleData, args);
 
   switch (true) {
     case args.delete:
