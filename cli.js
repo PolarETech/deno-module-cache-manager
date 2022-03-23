@@ -289,6 +289,22 @@ function deleteFile(moduleData) {
 }
 
 function displayCachedModuleList(moduleData, args) {
+  const sortedUrl = (() => {
+    if (args.sortDate) {
+      return Object
+        .keys(moduleData)
+        .sort()
+        .map((v) => {
+          moduleData[v].url = v;
+          return moduleData[v];
+        })
+        .sort((v1, v2) => (v1.date ?? "0") > (v2.date ?? "0") ? -1 : 1)
+        .map((v) => v.url);
+    } else {
+      return Object.keys(moduleData).sort();
+    }
+  })();
+
   const maxUrlLength = (() => {
     if (args.withDate) {
       return Object
@@ -300,7 +316,7 @@ function displayCachedModuleList(moduleData, args) {
     }
   })();
 
-  for (const url of Object.keys(moduleData).sort()) {
+  for (const url of sortedUrl) {
     if (args.withPath && Deno.noColor === false) {
       Deno.stdout.writeSync(new TextEncoder().encode(`\x1b[1m${url}\x1b[0m`));
     } else {
@@ -478,6 +494,7 @@ function displayHelp() {
   console.log(`${t}-n, --name, --url <MODULE_URL>${t}Print URLs of cached modules`);
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
   console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
+  console.log(`${t}    --sort-date               ${t}Print URLs of cached modules in order of their download date and time`);
   console.log(`${t}    --with-date               ${t}Print URLs of cached modules along with their download date and time`);
   console.log(`${t}    --with-path               ${t}Print URLs of cached modules along with paths of files related to them`);
 }
@@ -501,6 +518,7 @@ function sortOutArgs() {
     leaves: false,
     missingUrl: false,
     name: false,
+    sortDate: false,
     withDate: false,
     withPath: false,
   };
@@ -517,6 +535,7 @@ function sortOutArgs() {
     "--name": "name",
     "-n": "name",
     "--url": "name",
+    "--sort-date": "sortDate",
     "--with-date": "withDate",
     "--with-path": "withPath",
   };
@@ -595,7 +614,7 @@ async function main() {
     moduleData = collectRelatedFilePath(moduleData);
   }
 
-  if (args.withDate) {
+  if (args.withDate || args.sortDate) {
     moduleData = collectModuleDownloadDate(moduleData);
   }
 
