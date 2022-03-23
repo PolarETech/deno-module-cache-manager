@@ -12,9 +12,11 @@ function collectModuleData(depsPath, targetUrl, moduleData) {
       moduleData = collectModuleData(subDir, targetUrl, moduleData);
     } else if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
       const url = obtainURLValueFromMetadata(`${depsPath}/${dirEntry.name}`);
-      if (url.includes(targetUrl) || targetUrl === undefined) {
-        moduleData[url] = { hash: dirEntry.name.replace(".metadata.json", "") };
-      }
+
+      moduleData[url] = {
+        hash: dirEntry.name.replace(".metadata.json", ""),
+        target: url.includes(targetUrl) || targetUrl === undefined,
+      };
     }
   }
 
@@ -95,7 +97,7 @@ function buildBaseFilePath(url, hash) {
 }
 
 function collectRelatedFilePath(moduleData) {
-  for (const url of Object.keys(moduleData)) {
+  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
     const {
       depsHashedPath,
       genHashedPath,
@@ -129,7 +131,7 @@ function collectRelatedFilePath(moduleData) {
 }
 
 function collectModuleDownloadDate(moduleData) {
-  for (const url of Object.keys(moduleData)) {
+  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
     const { depsHashedPath } = buildBaseFilePath(url, moduleData[url].hash);
     moduleData[url].date = obtainDateValueFromMetadata(`${depsHashedPath}.metadata.json`);
   }
@@ -177,9 +179,7 @@ function collectAllHashedFilePath(type = "") {
 // OPTIMIZE:
 // If the number of cached modules is large,
 // execution will take noticeably longer.
-async function collectAllDepsModuleURL() {
-  const allModuleData = collectModuleData(baseDepsPath, "", {});
-
+async function collectAllDepsModuleURL(moduleData) {
   const depsModuleUrl = new Set();
 
   const regexpToFilterUrl = new RegExp("\\shttps?://");
@@ -187,10 +187,10 @@ async function collectAllDepsModuleURL() {
   const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
 
   let counter = 0;
-  const total = Object.keys(allModuleData).length;
+  const total = Object.keys(moduleData).length;
   displayProgress(counter, total, "modules checked");
 
-  for (const url of Object.keys(allModuleData)) {
+  for (const url of Object.keys(moduleData)) {
     // WARNING:
     // If the output format of "deno info" changes in the future,
     // this function may not work as expected.
@@ -250,22 +250,21 @@ async function extractLeavesModuleData(moduleData) {
     Deno.exit();
   }
 
-  const depsModuleUrl = await collectAllDepsModuleURL();
-  const leaves = {};
+  const depsModuleUrl = await collectAllDepsModuleURL(moduleData);
 
-  for (const url of Object.keys(moduleData)) {
-    if (depsModuleUrl.has(url)) continue;
-    leaves[url] = moduleData[url];
+  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
+    if (depsModuleUrl.has(url) === false) continue;
+    moduleData[url].target = false;
   }
 
-  return leaves;
+  return moduleData;
 }
 
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
   const deleteFilePathList = [];
-  for (const url of Object.keys(moduleData)) {
+  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
     deleteFilePathList.push(moduleData[url].relatedFilePath);
   }
 
@@ -293,6 +292,7 @@ function displayCachedModuleList(moduleData, args) {
     if (args.sortDate) {
       return Object
         .keys(moduleData)
+        .filter((v) => moduleData[v].target)
         .sort()
         .map((v) => {
           moduleData[v].url = v;
@@ -301,14 +301,16 @@ function displayCachedModuleList(moduleData, args) {
         .sort((v1, v2) => (v1.date ?? "0") > (v2.date ?? "0") ? -1 : 1)
         .map((v) => v.url);
     } else {
-      return Object.keys(moduleData).sort();
+      return Object
+        .keys(moduleData)
+        .filter((v) => moduleData[v].target)
+        .sort();
     }
   })();
 
   const maxUrlLength = (() => {
     if (args.withDate) {
-      return Object
-        .keys(moduleData)
+      return sortedUrl
         .map((v) => v.length)
         .reduce((v1, v2) => Math.max(v1, v2));
     } else {
@@ -604,7 +606,7 @@ async function main() {
     moduleData = await extractLeavesModuleData(moduleData);
   }
 
-  const moduleCount = Object.keys(moduleData).length;
+  const moduleCount = Object.keys(moduleData).filter((v) => moduleData[v].target).length;
   if (moduleCount === 0) {
     displayResultMessage({ name: "foundNoModule" });
     Deno.exit();
