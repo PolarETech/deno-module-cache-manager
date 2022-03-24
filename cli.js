@@ -54,6 +54,7 @@ class ModuleData {
 
   collectModule(depsPath, targetUrl) {
     if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
+    if (isDirectoryExist(depsPath) === false) return;
 
     for (const dirEntry of Deno.readDirSync(depsPath)) {
       if (dirEntry.isDirectory) {
@@ -156,12 +157,28 @@ async function obtainCacheLocation() {
   const process = Deno.run({
     cmd: ["deno", "info", "--json", "--unstable"],
     stdout: "piped",
+    stderr: "piped",
   });
 
-  const jsonData = JSON.parse(new TextDecoder().decode(await process.output()));
+  const [stderr, stdout, status] = await Promise.all([
+    process.stderrOutput(),
+    process.output(),
+    process.status(),
+  ]);
 
-  process.close();
+  let output;
 
+  if (status.success) {
+    output = new TextDecoder().decode(stdout);
+    process.close();
+  } else {
+    const errorString = new TextDecoder().decode(stderr);
+    console.log(errorString);
+    process.close();
+    Deno.exit(status.code);
+  }
+
+  const jsonData = JSON.parse(output);
   return { baseDepsPath: jsonData.modulesCache, baseGenPath: jsonData.typescriptCache };
 }
 
