@@ -3,46 +3,148 @@
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
-function collectModuleData(depsPath, targetUrl, moduleData) {
-  if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
+class ModuleData {
+  data = {};
 
-  for (const dirEntry of Deno.readDirSync(depsPath)) {
-    if (dirEntry.isDirectory) {
-      const subDir = `${depsPath}/${dirEntry.name}`;
-      moduleData = collectModuleData(subDir, targetUrl, moduleData);
-    } else if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
-      const url = obtainURLValueFromMetadata(`${depsPath}/${dirEntry.name}`);
+  get allUrlList() {
+    return Object.keys(this.data);
+  }
 
-      moduleData[url] = {
-        hash: dirEntry.name.replace(".metadata.json", ""),
-        target: url.includes(targetUrl) || targetUrl === undefined,
-      };
+  get targetedUrlList() {
+    return Object.keys(this.data).filter((v) => this.data[v].target);
+  }
+
+  get sortedUrlList() {
+    return this.targetedUrlList.sort();
+  }
+
+  get sortedUrlListByDate() {
+    return this.sortedUrlList
+      .map((v) => {
+        this.data[v].url = v;
+        return this.data[v];
+      })
+      .sort((v1, v2) => (v1.date ?? "0") > (v2.date ?? "0") ? -1 : 1)
+      .map((v) => v.url);
+  }
+
+  get targetedUrlListLength() {
+    return this.targetedUrlList.length;
+  }
+
+  get maxUrlStringLength() {
+    return this.targetedUrlList
+      .map((v) => v.length)
+      .reduce((v1, v2) => Math.max(v1, v2));
+  }
+
+  get deleteFilePathList() {
+    return this.targetedUrlList
+      .map((v) => this.data[v].relatedFilePath)
+      .flat();
+  }
+
+  date(url) {
+    return this.data[url].date;
+  }
+
+  relatedFilePath(url) {
+    return this.data[url].relatedFilePath;
+  }
+
+  collectModule(depsPath, targetUrl) {
+    if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
+
+    for (const dirEntry of Deno.readDirSync(depsPath)) {
+      if (dirEntry.isDirectory) {
+        const subDir = `${depsPath}/${dirEntry.name}`;
+        this.collectModule(subDir, targetUrl);
+        continue;
+      }
+
+      if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
+        const url = obtainValueFromMetadata("url", `${depsPath}/${dirEntry.name}`);
+        if (url === undefined) continue;
+
+        this.data[url] = {
+          hash: dirEntry.name.replace(".metadata.json", ""),
+          target: url.includes(targetUrl) || targetUrl === undefined,
+        };
+      }
     }
   }
 
-  return moduleData;
+  collectRelatedFilePath() {
+    for (const url of this.targetedUrlList) {
+      const {
+        depsHashedPath,
+        genHashedPath,
+        genUrlPath,
+      } = buildBaseFilePath(url, this.data[url].hash);
+
+      const extentionsInDeps = ["", ".metadata.json"];
+
+      // REVIEW:
+      // I have never seen .d.ts file created in the gen/http(s) directory.
+      // Is it necessary to handle the .d.ts extention?
+      // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
+      const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
+
+      const pathList = [];
+
+      for (const ext of extentionsInDeps) {
+        pathList.push(depsHashedPath + ext);
+      }
+
+      for (const path of [genHashedPath, genUrlPath]) {
+        for (const ext of extentionsInGen) {
+          pathList.push(path + ext);
+        }
+      }
+
+      this.data[url].relatedFilePath = pathList.filter((path) => isFileExist(path));
+    }
+  }
+
+  collectModuleDownloadDate() {
+    for (const url of this.targetedUrlList) {
+      const { depsHashedPath } = buildBaseFilePath(url, this.data[url].hash);
+      this.data[url].date = obtainValueFromMetadata("date", `${depsHashedPath}.metadata.json`);
+    }
+  }
+
+  async extractLeavesModule() {
+    const depsModuleUrl = await collectAllDepsModuleURL(this.allUrlList);
+
+    for (const url of this.targetedUrlList) {
+      if (depsModuleUrl.has(url) === false) continue;
+      this.data[url].target = false;
+    }
+  }
 }
 
-function obtainURLValueFromMetadata(metadataFilePath) {
-  const text = Deno.readTextFileSync(metadataFilePath);
-  const jsonData = JSON.parse(text);
-  return jsonData.url;
-}
-
-function obtainDateValueFromMetadata(metadataFilePath) {
-  const text = Deno.readTextFileSync(metadataFilePath);
-  const jsonData = JSON.parse(text);
+function obtainValueFromMetadata(type, metadataFilePath) {
   try {
-    // NOTE:
-    // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
-    // https://github.com/denoland/deno/pull/13010
-    if (jsonData.now && jsonData.now["secs_since_epoch"]) {
-      return new Date(jsonData.now["secs_since_epoch"] * 1000).toISOString();
+    const text = Deno.readTextFileSync(metadataFilePath);
+    const jsonData = JSON.parse(text);
+
+    switch (type) {
+      case "url":
+        return jsonData.url;
+      case "date":
+        // NOTE:
+        // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
+        // https://github.com/denoland/deno/pull/13010
+        if (jsonData.now && jsonData.now["secs_since_epoch"]) {
+          return new Date(jsonData.now["secs_since_epoch"] * 1000).toISOString();
+        }
+        if (jsonData.headers && jsonData.headers.date) {
+          return new Date(jsonData.headers.date).toISOString();
+        }
+        return undefined;
+      default:
+        return undefined;
     }
-    if (jsonData.headers && jsonData.headers.date) {
-      return new Date(jsonData.headers.date).toISOString();
-    }
-    return undefined;
   } catch (_e) {
     return undefined;
   }
@@ -96,48 +198,6 @@ function buildBaseFilePath(url, hash) {
   return { depsHashedPath, genHashedPath, genUrlPath };
 }
 
-function collectRelatedFilePath(moduleData) {
-  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
-    const {
-      depsHashedPath,
-      genHashedPath,
-      genUrlPath,
-    } = buildBaseFilePath(url, moduleData[url].hash);
-
-    const extentionsInDeps = ["", ".metadata.json"];
-
-    // REVIEW:
-    // I have never seen .d.ts file created in the gen/http(s) directory.
-    // Is it necessary to handle the .d.ts extention?
-    // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
-    const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
-
-    const pathList = [];
-
-    for (const ext of extentionsInDeps) {
-      pathList.push(depsHashedPath + ext);
-    }
-
-    for (const path of [genHashedPath, genUrlPath]) {
-      for (const ext of extentionsInGen) {
-        pathList.push(path + ext);
-      }
-    }
-
-    moduleData[url].relatedFilePath = pathList.filter((path) => isFileExist(path));
-  }
-
-  return moduleData;
-}
-
-function collectModuleDownloadDate(moduleData) {
-  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
-    const { depsHashedPath } = buildBaseFilePath(url, moduleData[url].hash);
-    moduleData[url].date = obtainDateValueFromMetadata(`${depsHashedPath}.metadata.json`);
-  }
-  return moduleData;
-}
-
 // WARNING:
 // This function does not collect compiled files
 // created by Deno v1.2.2 or earlier, whose file names are not hashed.
@@ -179,7 +239,7 @@ function collectAllHashedFilePath(type = "") {
 // OPTIMIZE:
 // If the number of cached modules is large,
 // execution will take noticeably longer.
-async function collectAllDepsModuleURL(moduleData) {
+async function collectAllDepsModuleURL(allUrlList) {
   const depsModuleUrl = new Set();
 
   const regexpToFilterUrl = new RegExp("\\shttps?://");
@@ -187,10 +247,10 @@ async function collectAllDepsModuleURL(moduleData) {
   const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
 
   let counter = 0;
-  const total = Object.keys(moduleData).length;
+  const total = allUrlList.length;
   displayProgress(counter, total, "modules checked");
 
-  for (const url of Object.keys(moduleData)) {
+  for (const url of allUrlList) {
     // WARNING:
     // If the output format of "deno info" changes in the future,
     // this function may not work as expected.
@@ -245,30 +305,11 @@ async function collectAllDepsModuleURL(moduleData) {
   return depsModuleUrl;
 }
 
-async function extractLeavesModuleData(moduleData) {
-  if (displayConfirmationMessage({ name: "leaves" }) === false) {
-    Deno.exit();
-  }
-
-  const depsModuleUrl = await collectAllDepsModuleURL(moduleData);
-
-  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
-    if (depsModuleUrl.has(url) === false) continue;
-    moduleData[url].target = false;
-  }
-
-  return moduleData;
-}
-
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
-  const deleteFilePathList = [];
-  for (const url of Object.keys(moduleData).filter((v) => moduleData[v].target)) {
-    deleteFilePathList.push(moduleData[url].relatedFilePath);
-  }
-
-  const fileCount = deleteFilePathList.flat().length;
+  const deleteFilePathList = moduleData.deleteFilePathList;
+  const fileCount = deleteFilePathList.length;
 
   if (fileCount === 0) return;
 
@@ -276,7 +317,7 @@ function deleteFile(moduleData) {
     Deno.exit();
   }
 
-  for (const path of deleteFilePathList.flat()) {
+  for (const path of deleteFilePathList) {
     try {
       Deno.removeSync(path);
       console.log(`DELETED: ${path}`);
@@ -288,37 +329,10 @@ function deleteFile(moduleData) {
 }
 
 function displayCachedModuleList(moduleData, args) {
-  const sortedUrl = (() => {
-    if (args.sortDate) {
-      return Object
-        .keys(moduleData)
-        .filter((v) => moduleData[v].target)
-        .sort()
-        .map((v) => {
-          moduleData[v].url = v;
-          return moduleData[v];
-        })
-        .sort((v1, v2) => (v1.date ?? "0") > (v2.date ?? "0") ? -1 : 1)
-        .map((v) => v.url);
-    } else {
-      return Object
-        .keys(moduleData)
-        .filter((v) => moduleData[v].target)
-        .sort();
-    }
-  })();
+  const sortedUrlList = args.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
+  const maxUrlLength = args.withDate ? moduleData.maxUrlStringLength : undefined;
 
-  const maxUrlLength = (() => {
-    if (args.withDate) {
-      return sortedUrl
-        .map((v) => v.length)
-        .reduce((v1, v2) => Math.max(v1, v2));
-    } else {
-      return undefined;
-    }
-  })();
-
-  for (const url of sortedUrl) {
+  for (const url of sortedUrlList) {
     if (args.withPath && Deno.noColor === false) {
       Deno.stdout.writeSync(new TextEncoder().encode(`\x1b[1m${url}\x1b[0m`));
     } else {
@@ -327,14 +341,14 @@ function displayCachedModuleList(moduleData, args) {
 
     if (args.withDate) {
       const prefix = " ".repeat(maxUrlLength - url.length + 2);
-      const dateString = moduleData[url].date ?? "Unknown";
+      const dateString = moduleData.date(url) ?? "Unknown";
       Deno.stdout.writeSync(new TextEncoder().encode(`${prefix}${dateString}\n`));
     } else {
       Deno.stdout.writeSync(new TextEncoder().encode("\n"));
     }
 
     if (args.withPath) {
-      for (const path of moduleData[url].relatedFilePath) {
+      for (const path of moduleData.relatedFilePath(url)) {
         console.log(` - ${path}`);
       }
     }
@@ -599,25 +613,28 @@ async function main() {
     Deno.exit();
   }
 
-  let moduleData = {};
-  moduleData = collectModuleData(baseDepsPath, args.targetUrl, moduleData);
+  const moduleData = new ModuleData();
+  moduleData.collectModule(baseDepsPath, args.targetUrl);
 
   if (args.leaves) {
-    moduleData = await extractLeavesModuleData(moduleData);
+    if (displayConfirmationMessage({ name: "leaves" }) === false) {
+      Deno.exit();
+    }
+    await moduleData.extractLeavesModule();
   }
 
-  const moduleCount = Object.keys(moduleData).filter((v) => moduleData[v].target).length;
+  const moduleCount = moduleData.targetedUrlListLength;
   if (moduleCount === 0) {
     displayResultMessage({ name: "foundNoModule" });
     Deno.exit();
   }
 
   if (args.withPath) {
-    moduleData = collectRelatedFilePath(moduleData);
+    moduleData.collectRelatedFilePath();
   }
 
   if (args.withDate || args.sortDate) {
-    moduleData = collectModuleDownloadDate(moduleData);
+    moduleData.collectModuleDownloadDate();
   }
 
   displayCachedModuleList(moduleData, args);
