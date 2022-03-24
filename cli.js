@@ -1,5 +1,6 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
+const version = "0.0.1";
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
@@ -483,6 +484,8 @@ function displayConfirmationMessage(type) {
 function displayResultMessage(type) {
   const message = (() => {
     switch (type.name) {
+      case "version":
+        return `Deno module cache manager ${type.version}`;
       case "versionError":
         return `INFO: Deno version ${type.version} or later is required`;
       case "moduleNameRequired":
@@ -513,7 +516,7 @@ function displayResultMessage(type) {
 
 function displayHelp() {
   const t = " ".repeat(4);
-  console.log("Deno module cache manager\n");
+  console.log(`Deno module cache manager ${version}\n`);
   console.log("USAGE:");
   console.log(`${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager <url-or-path-to-cli.js>`);
   console.log(`${t}deno-module-cache-manager [OPTIONS]\n`);
@@ -528,6 +531,7 @@ function displayHelp() {
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
   console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
   console.log(`${t}    --sort-date               ${t}Print URLs of cached modules in order of their download date and time`);
+  console.log(`${t}-V, --version                 ${t}Print version information`);
   console.log(`${t}    --with-date               ${t}Print URLs of cached modules along with their download date and time`);
   console.log(`${t}    --with-path               ${t}Print URLs of cached modules along with paths of files related to them`);
 }
@@ -552,6 +556,7 @@ function sortOutArgs() {
     missingUrl: false,
     name: false,
     sortDate: false,
+    version: false,
     withDate: false,
     withPath: false,
   };
@@ -569,6 +574,8 @@ function sortOutArgs() {
     "-n": "name",
     "--url": "name",
     "--sort-date": "sortDate",
+    "--version": "version",
+    "-V": "version",
     "--with-date": "withDate",
     "--with-path": "withPath",
   };
@@ -614,6 +621,11 @@ async function main() {
   }
 
   const args = sortOutArgs();
+
+  if (args.version) {
+    displayResultMessage({ name: "version", version: version });
+    Deno.exit();
+  }
 
   if (args.help) {
     displayHelp();
