@@ -11,7 +11,7 @@ Deno version 1.2.0 or later.
 Install the script with the following command:
 
 ```bash
-deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager <url-or-path-to-cli.js>
+deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
 ```
 
 ___NOTE:___
