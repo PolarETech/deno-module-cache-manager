@@ -65,12 +65,13 @@ class ModuleData {
       }
 
       if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
-        const url = obtainValueFromMetadata("url", `${depsPath}/${dirEntry.name}`);
-        if (url === undefined) continue;
+        const metadata = obtainValueFromMetadata(`${depsPath}/${dirEntry.name}`);
+        if (metadata.url === undefined) continue;
 
-        this.data[url] = {
+        this.data[metadata.url] = {
           hash: dirEntry.name.replace(".metadata.json", ""),
-          target: url.includes(targetUrl) || targetUrl === undefined,
+          target: metadata.url.includes(targetUrl) || targetUrl === undefined,
+          date: metadata.date,
         };
       }
     }
@@ -108,13 +109,6 @@ class ModuleData {
     }
   }
 
-  collectModuleDownloadDate() {
-    for (const url of this.targetedUrlList) {
-      const { depsHashedPath } = buildBaseFilePath(url, this.data[url].hash);
-      this.data[url].date = obtainValueFromMetadata("date", `${depsHashedPath}.metadata.json`);
-    }
-  }
-
   async extractLeavesModule() {
     const depsModuleUrl = await collectAllDepsModuleURL(this.allUrlList);
 
@@ -125,31 +119,39 @@ class ModuleData {
   }
 }
 
-function obtainValueFromMetadata(type, metadataFilePath) {
-  try {
-    const text = Deno.readTextFileSync(metadataFilePath);
-    const jsonData = JSON.parse(text);
+function obtainValueFromMetadata(metadataFilePath) {
+  const metadata = {};
 
-    switch (type) {
-      case "url":
-        return jsonData.url;
-      case "date":
-        // NOTE:
-        // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
-        // https://github.com/denoland/deno/pull/13010
-        if (jsonData.now && jsonData.now["secs_since_epoch"]) {
-          return new Date(jsonData.now["secs_since_epoch"] * 1000).toISOString();
-        }
-        if (jsonData.headers && jsonData.headers.date) {
-          return new Date(jsonData.headers.date).toISOString();
-        }
-        return undefined;
-      default:
-        return undefined;
+  const jsonData = (() => {
+    try {
+      const text = Deno.readTextFileSync(metadataFilePath);
+      return JSON.parse(text);
+    } catch (_e) {
+      return undefined;
     }
-  } catch (_e) {
-    return undefined;
-  }
+  })();
+
+  if (jsonData === undefined) return metadata;
+
+  metadata.url = jsonData.url;
+
+  metadata.date = (() => {
+    try {
+      // NOTE:
+      // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
+      // https://github.com/denoland/deno/pull/13010
+      return new Date(jsonData.now.secs_since_epoch * 1000).toISOString();
+    } catch (_e) {
+      // Proceed to read a date header instead of using SystemTime
+    }
+    try {
+      return new Date(jsonData.headers.date).toISOString();
+    } catch (_e) {
+      return undefined;
+    }
+  })();
+
+  return metadata;
 }
 
 async function obtainCacheLocation() {
@@ -660,10 +662,6 @@ async function main() {
 
   if (args.withPath) {
     moduleData.collectRelatedFilePath();
-  }
-
-  if (args.withDate || args.sortDate) {
-    moduleData.collectModuleDownloadDate();
   }
 
   displayCachedModuleList(moduleData, args);
