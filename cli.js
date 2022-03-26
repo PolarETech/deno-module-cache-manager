@@ -498,12 +498,23 @@ function displayResultMessage(type) {
         return "INFO: Please specify the module name";
       case "foundNoModule":
         return "INFO: No modules are found";
-      case "foundModule":
-        if (type.moduleCount === 1) {
-          return `\nTotal: ${type.moduleCount} module is found`;
+      case "foundModule": {
+        const moduleMessage = (() => {
+          if (type.moduleCount === 1) {
+            return `\nTotal: ${type.moduleCount} module is found`;
+          } else {
+            return `\nTotal: ${type.moduleCount} modules are found`;
+          }
+        })();
+
+        if (type.fileCount === undefined) return moduleMessage;
+
+        if (type.fileCount === 1) {
+          return `${moduleMessage} (${type.fileCount} file)`;
         } else {
-          return `\nTotal: ${type.moduleCount} modules are found`;
+          return `${moduleMessage} (${type.fileCount} files)`;
         }
+      }
       case "foundNoFile":
         return "INFO: No files are found";
       case "foundFile":
@@ -675,7 +686,11 @@ async function main() {
       deleteFile(moduleData);
       break;
     default:
-      displayResultMessage({ name: "foundModule", moduleCount });
+      displayResultMessage({
+        name: "foundModule",
+        moduleCount,
+        fileCount: moduleData.relatedFilePathListLength,
+      });
   }
 }
 
