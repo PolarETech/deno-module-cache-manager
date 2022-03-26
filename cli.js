@@ -21,12 +21,9 @@ class ModuleData {
 
   get sortedUrlListByDate() {
     return this.sortedUrlList
-      .map((v) => {
-        this.data[v].url = v;
-        return this.data[v];
-      })
-      .sort((v1, v2) => (v1.date ?? "0") > (v2.date ?? "0") ? -1 : 1)
-      .map((v) => v.url);
+      .sort((v1, v2) => {
+        return (this.data[v1].date ?? "0") > (this.data[v2].date ?? "0") ? -1 : 1;
+      });
   }
 
   get targetedUrlListLength() {
@@ -35,14 +32,21 @@ class ModuleData {
 
   get maxUrlStringLength() {
     return this.targetedUrlList
-      .map((v) => v.length)
-      .reduce((v1, v2) => Math.max(v1, v2));
+      .reduce((v1, v2) => Math.max(v1, v2.length), 0);
   }
 
-  get deleteFilePathList() {
+  get relatedFilePathList() {
     return this.targetedUrlList
-      .map((v) => this.data[v].relatedFilePath)
-      .flat();
+      .flatMap((v) => this.data[v].relatedFilePath);
+  }
+
+  get relatedFilePathListLength() {
+    try {
+      return this.targetedUrlList
+        .reduce((v1, v2) => v1 + this.data[v2].relatedFilePath.length, 0);
+    } catch (_e) {
+      return undefined;
+    }
   }
 
   date(url) {
@@ -328,8 +332,8 @@ async function collectAllDepsModuleURL(allUrlList) {
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
-  const deleteFilePathList = moduleData.deleteFilePathList;
-  const fileCount = deleteFilePathList.length;
+  const filePathList = moduleData.relatedFilePathList;
+  const fileCount = moduleData.relatedFilePathListLength;
 
   if (fileCount === 0) return;
 
@@ -337,7 +341,7 @@ function deleteFile(moduleData) {
     Deno.exit();
   }
 
-  for (const path of deleteFilePathList) {
+  for (const path of filePathList) {
     try {
       Deno.removeSync(path);
       console.log(`DELETED: ${path}`);
