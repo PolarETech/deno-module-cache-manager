@@ -126,10 +126,10 @@ class ModuleData {
   }
 
   async extractLeavesModule() {
-    const depsModuleUrl = await collectAllDepsModuleURL(this.allUrlList);
+    const depsModuleUrlList = await collectAllDepsModuleURL(this.allUrlList);
 
     for (const url of this.targetedUrlList) {
-      if (depsModuleUrl.has(url) === false) continue;
+      if (depsModuleUrlList.has(url) === false) continue;
       this.data[url].target = false;
     }
   }
@@ -309,7 +309,7 @@ function collectAllHashedFilePath(type = "") {
 // If the number of cached modules is large,
 // execution will take noticeably longer.
 async function collectAllDepsModuleURL(allUrlList) {
-  const depsModuleUrl = new Set();
+  const collectedList = new Set();
 
   const regexpToFilterUrl = new RegExp("\\shttps?://");
   const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
@@ -320,58 +320,29 @@ async function collectAllDepsModuleURL(allUrlList) {
   displayProgress(counter, total, "modules checked");
 
   for (const url of allUrlList) {
+    const denoInfo = await obtainDenoInfo(url);
+
     // WARNING:
     // If the output format of "deno info" changes in the future,
     // this function may not work as expected.
+    const depsUrlList = denoInfo
+      .split("\n")
+      .filter((line) => regexpToFilterUrl.test(line))
+      .map((line) => {
+        return line
+          .trim()
+          .replace(regexpToRemoveBeforeUrl, "http")
+          .replace(regexpToRemoveAfterUrl, "");
+      });
 
-    // NOTE:
-    // Output with "--json" option is difficult to use
-    // because the format changes significantly depending on the Deno version.
-    const process = Deno.run({
-      cmd: ["deno", "info", url],
-      env: { NO_COLOR: "1" },
-      stdout: "piped",
-      stderr: "piped",
-    });
-
-    // NOTE:
-    // https://github.com/denoland/deno/issues/4568
-    const [stderr, stdout, status] = await Promise.all([
-      process.stderrOutput(),
-      process.output(),
-      process.status(),
-    ]);
-
-    if (status.success) {
-      const output = new TextDecoder()
-        .decode(stdout)
-        .split("\n")
-        .filter((line) => regexpToFilterUrl.test(line))
-        .map((line) => {
-          return line
-            .trim()
-            .replace(regexpToRemoveBeforeUrl, "http")
-            .replace(regexpToRemoveAfterUrl, "");
-        });
-
-      process.close();
-
-      for (const url of output) {
-        depsModuleUrl.add(url);
-      }
-
-      displayProgress(++counter, total, "modules checked");
-    } else {
-      const errorString = new TextDecoder().decode(stderr);
-      console.log(errorString);
-      displayCursor();
-
-      process.close();
-      Deno.exit(status.code);
+    for (const depsUrl of depsUrlList) {
+      collectedList.add(depsUrl);
     }
+
+    displayProgress(++counter, total, "modules checked");
   }
 
-  return depsModuleUrl;
+  return collectedList;
 }
 
 // OPTIMIZE:
