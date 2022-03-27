@@ -57,6 +57,10 @@ class ModuleData {
     return this.data[url].relatedFilePath;
   }
 
+  uses(url) {
+    return this.data[url].uses.sort();
+  }
+
   collectModule(depsPath, targetUrl) {
     if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
     if (isDirectoryExist(depsPath) === false) return;
@@ -110,6 +114,14 @@ class ModuleData {
       }
 
       this.data[url].relatedFilePath = pathList.filter((path) => isFileExist(path));
+    }
+  }
+
+  async collectUsesModule() {
+    const usesModuleUrlData = await collectAllUsesModuleURL(this.allUrlList);
+
+    for (const url of this.targetedUrlList) {
+      this.data[url].uses = usesModuleUrlData[url] ? [...usesModuleUrlData[url]] : [];
     }
   }
 
@@ -187,6 +199,39 @@ async function obtainCacheLocation() {
 
   const jsonData = JSON.parse(output);
   return { baseDepsPath: jsonData.modulesCache, baseGenPath: jsonData.typescriptCache };
+}
+
+async function obtainDenoInfo(url) {
+  // NOTE:
+  // Output with "--json" option is difficult to use
+  // because the format changes significantly depending on the Deno version.
+  const process = Deno.run({
+    cmd: ["deno", "info", url],
+    env: { NO_COLOR: "1" },
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  // NOTE:
+  // https://github.com/denoland/deno/issues/4568
+  const [stderr, stdout, status] = await Promise.all([
+    process.stderrOutput(),
+    process.output(),
+    process.status(),
+  ]);
+
+  if (status.success) {
+    const output = new TextDecoder().decode(stdout);
+    process.close();
+    return output;
+  } else {
+    const errorString = new TextDecoder().decode(stderr);
+    console.log(`\n\n${errorString.trim()}`);
+    displayCursor();
+
+    process.close();
+    Deno.exit(status.code);
+  }
 }
 
 function isFileExist(path) {
@@ -329,6 +374,52 @@ async function collectAllDepsModuleURL(allUrlList) {
   return depsModuleUrl;
 }
 
+// OPTIMIZE:
+// If the number of cached modules is large,
+// execution will take noticeably longer.
+async function collectAllUsesModuleURL(allUrlList) {
+  const collectedData = {};
+
+  const regexpToFilterUrl = new RegExp("^\\s*.{3}\\shttps?://");
+  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
+  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
+
+  let counter = 0;
+  const total = allUrlList.length;
+  displayProgress(counter, total, "modules checked");
+
+  for (const url of allUrlList) {
+    const denoInfo = await obtainDenoInfo(url);
+
+    // WARNING:
+    // If the output format of "deno info" changes in the future,
+    // this function may not work as expected.
+    const depsUrlList = new Set(
+      denoInfo
+        .split("\n")
+        .filter((line) => regexpToFilterUrl.test(line))
+        .map((line) => {
+          return line
+            .trim()
+            .replace(regexpToRemoveBeforeUrl, "http")
+            .replace(regexpToRemoveAfterUrl, "");
+        }),
+    );
+
+    for (const depsUrl of depsUrlList) {
+      if (collectedData[depsUrl] === undefined) {
+        collectedData[depsUrl] = new Set();
+      }
+
+      collectedData[depsUrl].add(url);
+    }
+
+    displayProgress(++counter, total, "modules checked");
+  }
+
+  return collectedData;
+}
+
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
@@ -357,7 +448,7 @@ function displayCachedModuleList(moduleData, args) {
   const maxUrlLength = args.withDate ? moduleData.maxUrlStringLength : undefined;
 
   for (const url of sortedUrlList) {
-    if (args.withPath && Deno.noColor === false) {
+    if ((args.withPath || args.uses) && Deno.noColor === false) {
       Deno.stdout.writeSync(new TextEncoder().encode(`\x1b[1m${url}\x1b[0m`));
     } else {
       Deno.stdout.writeSync(new TextEncoder().encode(url));
@@ -371,9 +462,18 @@ function displayCachedModuleList(moduleData, args) {
       Deno.stdout.writeSync(new TextEncoder().encode("\n"));
     }
 
-    if (args.withPath) {
-      for (const path of moduleData.relatedFilePath(url)) {
-        console.log(` - ${path}`);
+    if (args.withPath || args.uses) {
+      const list = (() => {
+        switch (true) {
+          case args.withPath:
+            return moduleData.relatedFilePath(url);
+          case args.uses:
+            return moduleData.uses(url);
+        }
+      })();
+
+      for (const value of list) {
+        console.log(` - ${value}`);
       }
     }
   }
@@ -469,7 +569,7 @@ function displayConfirmationMessage(type) {
           return "\nThis operation cannot be undone.\n" +
             `Are you sure you want to delete the above ${type.fileCount} files? (y/N): `;
         }
-      case "leaves":
+      case "longTime":
         return "It may take a very long time. Are you sure you want to start the process? (y/N): ";
       default:
         return undefined;
@@ -548,6 +648,7 @@ function displayHelp() {
   console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
   console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
   console.log(`${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time`);
+  console.log(`${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them`);
   console.log(`${t}-V, --version                 ${t}Print version information`);
   console.log(`${t}    --with-date               ${t}Print cached module URLs along with their download date and time`);
   console.log(`${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them`);
@@ -573,6 +674,7 @@ function sortOutArgs() {
     missingUrl: false,
     name: false,
     sortDate: false,
+    uses: false,
     version: false,
     withDate: false,
     withPath: false,
@@ -591,11 +693,23 @@ function sortOutArgs() {
     "-n": "name",
     "--url": "name",
     "--sort-date": "sortDate",
+    "--uses": "uses",
     "--version": "version",
     "-V": "version",
     "--with-date": "withDate",
     "--with-path": "withPath",
   };
+
+  const exclusiveArgs = new Set([
+    "delete",
+    "help",
+    "leaves",
+    "missingUrl",
+    "uses",
+    "version",
+  ]);
+
+  let setExclusive = false;
 
   const argsWithFileName = ["delete", "name"];
 
@@ -608,7 +722,16 @@ function sortOutArgs() {
   for (const arg of Deno.args) {
     if (Object.keys(availableArgs).includes(arg)) {
       key = availableArgs[arg];
-      args[key] = true;
+
+      if (exclusiveArgs.has(key)) {
+        if (setExclusive === false) {
+          args[key] = true;
+          setExclusive = true;
+        }
+      } else {
+        args[key] = true;
+      }
+
       continue;
     }
 
@@ -627,6 +750,7 @@ function sortOutArgs() {
   args.targetUrl = tempTargetUrl.delete ?? tempTargetUrl.name;
 
   args.withPath = args.delete ? true : args.withPath;
+  args.withPath = args.uses ? false : args.withPath;
 
   return args;
 }
@@ -659,15 +783,16 @@ async function main() {
     Deno.exit();
   }
 
+  if (args.leaves || args.uses) {
+    if (displayConfirmationMessage({ name: "longTime" }) === false) {
+      Deno.exit();
+    }
+  }
+
   const moduleData = new ModuleData();
   moduleData.collectModule(baseDepsPath, args.targetUrl);
 
-  if (args.leaves) {
-    if (displayConfirmationMessage({ name: "leaves" }) === false) {
-      Deno.exit();
-    }
-    await moduleData.extractLeavesModule();
-  }
+  if (args.leaves) await moduleData.extractLeavesModule();
 
   const moduleCount = moduleData.targetedUrlListLength;
   if (moduleCount === 0) {
@@ -675,9 +800,9 @@ async function main() {
     Deno.exit();
   }
 
-  if (args.withPath) {
-    moduleData.collectRelatedFilePath();
-  }
+  if (args.withPath) moduleData.collectRelatedFilePath();
+
+  if (args.uses) await moduleData.collectUsesModule();
 
   displayCachedModuleList(moduleData, args);
 
