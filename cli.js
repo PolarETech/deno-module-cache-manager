@@ -682,22 +682,17 @@ function sortOutArgs() {
 
   let setExclusive = false;
 
-  const argsWithFileName = ["delete", "name"];
-
-  const tempTargetUrl = {
-    delete: undefined,
-    name: undefined,
-  };
-
   let key = "";
   for (const arg of Deno.args) {
-    if (Object.keys(availableArgs).includes(arg)) {
+    if (availableArgs[arg]) {
       key = availableArgs[arg];
 
       if (exclusiveArgs.has(key)) {
         if (setExclusive === false) {
           args[key] = true;
           setExclusive = true;
+        } else {
+          key = "";
         }
       } else {
         args[key] = true;
@@ -706,19 +701,12 @@ function sortOutArgs() {
       continue;
     }
 
-    if (argsWithFileName.includes(key) === false) {
-      key = "name";
-    }
-
-    // Give priority to the url specified first
-    // NOTE:
-    // ??= operator does not work properly on "deno run" before Deno v1.6.2
-    // https://github.com/denoland/deno/issues/8627
-    tempTargetUrl[key] = tempTargetUrl[key] ?? arg;
+    // Priority when multiple URLs are specified in arguments:
+    // - 1. The URL specified immediately after the delete argument when executing the delete function
+    // - 2. The URL specified first
+    args.targetUrl = (key === "delete") ? arg : args.targetUrl ?? arg;
+    key = "";
   }
-
-  // Give priority to the url specified by the delete argument
-  args.targetUrl = tempTargetUrl.delete ?? tempTargetUrl.name;
 
   args.withPath = args.delete ? true : args.withPath;
   args.withPath = args.uses ? false : args.withPath;
