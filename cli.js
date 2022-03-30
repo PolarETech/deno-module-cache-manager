@@ -254,7 +254,7 @@ function buildBaseFilePath(url, hash) {
   url = new URL("", url);
 
   const protocolDirName = url.protocol.slice(0, -1); // delete trailing letter ":"
-  const hostDirName = `${url.hostname}${url.port ? `_PORT${url.port}` : ""}`;
+  const hostDirName = url.hostname + (url.port ? `_PORT${url.port}` : "");
   const pathName = url.pathname.slice(1); // delete leading letter "/"
 
   const depsHashedPath = [baseDepsPath, protocolDirName, hostDirName, hash].join("/");
@@ -419,19 +419,24 @@ function displayCachedModuleList(moduleData, args) {
   const maxUrlLength = args.withDate ? moduleData.maxUrlStringLength : undefined;
 
   for (const url of sortedUrlList) {
-    if ((args.withPath || args.uses) && Deno.noColor === false) {
-      Deno.stdout.writeSync(new TextEncoder().encode(`\x1b[1m${url}\x1b[0m`));
-    } else {
-      Deno.stdout.writeSync(new TextEncoder().encode(url));
-    }
+    const urlString = (() => {
+      if ((args.withPath || args.uses) && Deno.noColor === false) {
+        return `\x1b[1m${url}\x1b[0m$`;
+      } else {
+        return url;
+      }
+    })();
 
-    if (args.withDate) {
-      const prefix = " ".repeat(maxUrlLength - url.length + 2);
-      const dateString = moduleData.date(url) ?? "Unknown";
-      Deno.stdout.writeSync(new TextEncoder().encode(`${prefix}${dateString}\n`));
-    } else {
-      Deno.stdout.writeSync(new TextEncoder().encode("\n"));
-    }
+    const dateString = (() => {
+      if (args.withDate) {
+        const padding = " ".repeat(maxUrlLength - url.length + 2);
+        return padding + (moduleData.date(url) ?? "Unknown");
+      } else {
+        return "";
+      }
+    })();
+
+    console.log(urlString + dateString);
 
     if (args.withPath || args.uses) {
       const list = (() => {
@@ -527,12 +532,10 @@ function displayProgress(current, total, suffix = "done") {
     displayCursor(false);
   }
 
-  Deno.stdout.writeSync(new TextEncoder().encode(text));
+  Deno.stdout.writeSync(new TextEncoder().encode(`${text}\r`));
 
-  if (current < total) {
-    Deno.stdout.writeSync(new TextEncoder().encode("\r"));
-  } else {
-    Deno.stdout.writeSync(new TextEncoder().encode("\r\x1b[2K"));
+  if (current >= total) {
+    Deno.stdout.writeSync(new TextEncoder().encode("\x1b[2K"));
     displayCursor(true);
   }
 }
@@ -612,25 +615,27 @@ function displayResultMessage(type) {
 
 function displayHelp() {
   const t = " ".repeat(4);
-  console.log(`Deno module cache manager ${version}\n`);
-  console.log("USAGE:");
-  console.log(`${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js`);
-  console.log(`${t}deno-module-cache-manager [OPTIONS]\n`);
-  console.log("OPTIONS:");
-  console.log(`${t}-d, --delete <MODULE_URL>     ${t}Delete cached module files`);
-  console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
-  console.log(`${t}                              ${t}and files related to the matched module URLs are objects of deletion`);
-  console.log(`${t}-h, --help                    ${t}Print help information`);
-  console.log(`${t}    --leaves                  ${t}Print cached module URLs that are not dependencies of another cached module`);
-  console.log(`${t}    --missing-url             ${t}Print cached module file paths whose URLs are missing`);
-  console.log(`${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs`);
-  console.log(`${t}                              ${t}Perform a substring search for MODULE_URL`);
-  console.log(`${t}                              ${t}and the matched module URLs are objects of printing`);
-  console.log(`${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time`);
-  console.log(`${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them`);
-  console.log(`${t}-V, --version                 ${t}Print version information`);
-  console.log(`${t}    --with-date               ${t}Print cached module URLs along with their download date and time`);
-  console.log(`${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them`);
+  console.log(
+    `Deno module cache manager ${version}\n\n` +
+      `USAGE:\n` +
+      `${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js\n` +
+      `${t}deno-module-cache-manager [OPTIONS]\n\n` +
+      `OPTIONS:\n` +
+      `${t}-d, --delete <MODULE_URL>     ${t}Delete cached module files\n` +
+      `${t}                              ${t}Perform a substring search for MODULE_URL\n` +
+      `${t}                              ${t}and files related to the matched module URLs are objects of deletion\n` +
+      `${t}-h, --help                    ${t}Print help information\n` +
+      `${t}    --leaves                  ${t}Print cached module URLs that are not dependencies of another cached module\n` +
+      `${t}    --missing-url             ${t}Print cached module file paths whose URLs are missing\n` +
+      `${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs\n` +
+      `${t}                              ${t}Perform a substring search for MODULE_URL\n` +
+      `${t}                              ${t}and the matched module URLs are objects of printing\n` +
+      `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` +
+      `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` +
+      `${t}-V, --version                 ${t}Print version information\n` +
+      `${t}    --with-date               ${t}Print cached module URLs along with their download date and time\n` +
+      `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them`,
+  );
 }
 
 function checkDenoVersion(version) {
