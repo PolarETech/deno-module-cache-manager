@@ -86,20 +86,20 @@ class ModuleData {
   }
 
   collectRelatedFilePath() {
+    const extentionsInDeps = ["", ".metadata.json"];
+
+    // REVIEW:
+    // I have never seen .d.ts file created in the gen/http(s) directory.
+    // Is it necessary to handle the .d.ts extention?
+    // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
+    const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
+
     for (const url of this.targetedUrlList) {
       const {
         depsHashedPath,
         genHashedPath,
         genUrlPath,
       } = buildBaseFilePath(url, this.data[url].hash);
-
-      const extentionsInDeps = ["", ".metadata.json"];
-
-      // REVIEW:
-      // I have never seen .d.ts file created in the gen/http(s) directory.
-      // Is it necessary to handle the .d.ts extention?
-      // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
-      const extentionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
 
       const pathList = [];
 
@@ -453,13 +453,21 @@ function displayCachedModuleList(moduleData, args) {
 function displayPathOfFileWithMissingURL() {
   const pathList = collectAllHashedFilePath();
 
+  const metadataExt = ".metadata.json";
+
+  // REVIEW:
+  // I have never seen .d.ts file created in the gen/http(s) directory.
+  // Is it necessary to handle the .d.ts extention?
+  // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
+  const regexpToRemoveExt = new RegExp(/\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/);
+
   let fileCount = 0;
 
   for (const path of pathList) {
     if (path.startsWith(baseDepsPath) && path.endsWith(".metadata.json")) continue;
 
-    const adjustedPath = path.replace(/\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/, "");
-    const depsMetadataFilePath = `${adjustedPath.replace(baseGenPath, baseDepsPath)}.metadata.json`;
+    const adjustedPath = path.replace(regexpToRemoveExt, "");
+    const depsMetadataFilePath = adjustedPath.replace(baseGenPath, baseDepsPath) + metadataExt;
 
     if (isFileExist(depsMetadataFilePath)) continue;
 
