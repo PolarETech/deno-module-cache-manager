@@ -421,7 +421,7 @@ function displayCachedModuleList(moduleData, args) {
   for (const url of sortedUrlList) {
     const urlString = (() => {
       if ((args.withPath || args.uses) && Deno.noColor === false) {
-        return `\x1b[1m${url}\x1b[0m$`;
+        return `\x1b[1m${url}\x1b[0m`;
       } else {
         return url;
       }
