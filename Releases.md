@@ -1,5 +1,10 @@
 # Releases
 
+### 0.2.1 / 2022.03.31
+
+- fix: output URL has a $ character at the end
+- fix: incomplete output for uses option
+
 ### 0.2.0 / 2022.03.30
 
 - feat: additional output of number of files for --with-path option
