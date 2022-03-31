@@ -133,17 +133,14 @@ Total: 9 modules are found
 
 
 # Print which modules depend on it
-$ deno-module-cache-manager -n io --uses
+$ deno-module-cache-manager -n bytes --uses
 It may take a very long time. Are you sure you want to start the process? (y/N): y
-https://deno.land/std@0.130.0/io/buffer.ts
- - https://deno.land/std@0.130.0/examples/cat.ts
- - https://deno.land/std@0.130.0/streams/conversion.ts
-https://deno.land/std@0.130.0/io/types.d.ts
- - https://deno.land/std@0.130.0/examples/cat.ts
+https://deno.land/std@0.130.0/bytes/bytes_list.ts
  - https://deno.land/std@0.130.0/io/buffer.ts
- - https://deno.land/std@0.130.0/streams/conversion.ts
-https://deno.land/std@0.130.0/streams/conversion.ts
- - https://deno.land/std@0.130.0/examples/cat.ts
+https://deno.land/std@0.130.0/bytes/equals.ts
+ - https://deno.land/std@0.130.0/bytes/mod.ts
+https://deno.land/std@0.130.0/bytes/mod.ts
+ - https://deno.land/std@0.130.0/io/buffer.ts
 
 Total: 3 modules are found
 

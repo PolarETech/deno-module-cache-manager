@@ -351,7 +351,16 @@ async function collectAllDepsModuleURL(allUrlList) {
 async function collectAllUsesModuleURL(allUrlList) {
   const collectedData = {};
 
-  const regexpToFilterUrl = new RegExp("^\\s*.{3}\\shttps?://");
+  const regexpToFilterUrl = (() => {
+    // NOTE:
+    // The output format of "deno info" has been changed since Deno v1.4.0
+    if (checkDenoVersion("1.4.0")) {
+      return new RegExp("^.{3}\\shttps?://");
+    } else {
+      return new RegExp("^\\s{2}.{3}\\shttps?://");
+    }
+  })();
+
   const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
   const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
 
