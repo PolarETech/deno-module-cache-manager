@@ -49,6 +49,15 @@ class ModuleData {
     }
   }
 
+  get typesDataSpecifiedInHeader() {
+    return this.allUrlList
+      .filter((v) => this.data[v].types)
+      .reduce((object, v) => {
+        object[v] = this.data[v].types;
+        return object;
+      }, {});
+  }
+
   date(url) {
     return this.data[url].date;
   }
@@ -80,6 +89,7 @@ class ModuleData {
           hash: dirEntry.name.replace(".metadata.json", ""),
           target: metadata.url.includes(targetUrl) || targetUrl === undefined,
           date: metadata.date,
+          types: metadata.types,
         };
       }
     }
@@ -118,20 +128,52 @@ class ModuleData {
   }
 
   async collectUsesModule() {
-    const usesModuleUrlData = await collectAllUsesModuleURL(this.allUrlList);
+    const deps1 = await obtainDepsData(this.allUrlList);
+    const deps2 = this.typesDataSpecifiedInHeader;
+    const usesData = switchObjectKeyAndValue(mergeObject(deps1, deps2));
 
     for (const url of this.targetedUrlList) {
-      this.data[url].uses = usesModuleUrlData[url] ? [...usesModuleUrlData[url]] : [];
+      this.data[url].uses = usesData[url] ? [...usesData[url]] : [];
     }
   }
 
   async extractLeavesModule() {
-    const depsModuleUrlList = await collectAllDepsModuleURL(this.allUrlList);
-
+    await this.collectUsesModule();
     for (const url of this.targetedUrlList) {
-      if (depsModuleUrlList.has(url) === false) continue;
-      this.data[url].target = false;
+      if (this.data[url].uses.length > 0) {
+        this.data[url].target = false;
+      }
     }
+  }
+}
+
+class Semaphore {
+  constructor(maxConcurrent = 1) {
+    this.counter = maxConcurrent;
+    this.queue = [];
+  }
+
+  try() {
+    if (this.counter === 0) return;
+    if (this.queue.length === 0) return;
+    this.counter--;
+    const resolve = this.queue.shift();
+    resolve();
+  }
+
+  acquire() {
+    if (this.counter > 0) {
+      this.counter--;
+      return new Promise((resolve) => resolve());
+    }
+    return new Promise((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release() {
+    this.counter++;
+    this.try();
   }
 }
 
@@ -163,6 +205,15 @@ function obtainValueFromMetadata(metadataFilePath) {
     try {
       return new Date(jsonData.headers.date).toISOString();
     } catch (_e) {
+      return undefined;
+    }
+  })();
+
+  // URL of .d.ts file specified in x-typescript-types header
+  metadata.types = (() => {
+    if (/javascript|jsx/.test(jsonData.headers?.["content-type"])) {
+      return jsonData.headers?.["x-typescript-types"];
+    } else {
       return undefined;
     }
   })();
@@ -234,6 +285,61 @@ async function obtainDenoInfo(url) {
   }
 }
 
+// OPTIMIZE:
+// If the number of cached modules is large,
+// execution will take noticeably longer.
+async function obtainDepsData(urlList) {
+  const collectedData = {};
+
+  const regexpToFilterUrl = (() => {
+    // NOTE:
+    // The output format of "deno info" has been changed since Deno v1.4.0
+    if (checkDenoVersion("1.4.0")) {
+      return new RegExp("^\\S{3}\\shttps?://");
+    } else {
+      return new RegExp("^\\s{2}\\S{3}\\shttps?://");
+    }
+  })();
+
+  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
+  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
+
+  let counter = 0;
+  const total = urlList.length;
+  displayProgress(counter, total, "modules checked");
+
+  const semaphore = new Semaphore(5);
+
+  await Promise.all(urlList.map(async (url) => {
+    await semaphore.acquire();
+
+    const denoInfo = await obtainDenoInfo(url);
+
+    // WARNING:
+    // If the output format of "deno info" changes in the future,
+    // this function may not work as expected.
+    const depsUrlList = new Set(
+      denoInfo
+        .split("\n")
+        .filter((line) => regexpToFilterUrl.test(line))
+        .map((line) => {
+          return line
+            .trim()
+            .replace(regexpToRemoveBeforeUrl, "http")
+            .replace(regexpToRemoveAfterUrl, "");
+        }),
+    );
+
+    collectedData[url] = new Set(depsUrlList);
+
+    semaphore.release();
+
+    displayProgress(++counter, total, "modules checked");
+  }));
+
+  return collectedData;
+}
+
 function isFileExist(path) {
   try {
     return Deno.lstatSync(path).isFile;
@@ -248,6 +354,48 @@ function isDirectoryExist(path) {
   } catch (_e) {
     return false;
   }
+}
+
+/**
+ * Merge two objects.
+ * @param {Object.<string, (string|Set.<string>)>} obj1
+ * @param {Object.<string, (string|Set.<string>)>} obj2
+ * @returns {Object.<string, Set.<string>>} Object merging obj1 and obj2
+ */
+function mergeObject(obj1, obj2) {
+  const mergedObj = {};
+  for (const obj of [obj1, obj2]) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (mergedObj[key] === undefined) mergedObj[key] = new Set();
+      if (typeof value === "string") {
+        mergedObj[key].add(value);
+      } else {
+        value.forEach(mergedObj[key].add, mergedObj[key]);
+      }
+    }
+  }
+  return mergedObj;
+}
+
+/**
+ * Switch key and value of an object.
+ * @param {Object.<string, (string|Set.<string>)>} obj
+ * @returns {Object.<string, Set.<string>>} Switched object
+ */
+function switchObjectKeyAndValue(obj) {
+  const switchedObj = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "string") {
+      if (switchedObj[value] === undefined) switchedObj[value] = new Set();
+      switchedObj[value].add(key);
+    } else {
+      for (const v of value) {
+        if (switchedObj[v] === undefined) switchedObj[v] = new Set();
+        switchedObj[v].add(key);
+      }
+    }
+  }
+  return switchedObj;
 }
 
 function buildBaseFilePath(url, hash) {
@@ -303,101 +451,6 @@ function collectAllHashedFilePath(type = "") {
   }
 
   return pathList;
-}
-
-// OPTIMIZE:
-// If the number of cached modules is large,
-// execution will take noticeably longer.
-async function collectAllDepsModuleURL(allUrlList) {
-  const collectedList = new Set();
-
-  const regexpToFilterUrl = new RegExp("\\shttps?://");
-  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
-  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
-
-  let counter = 0;
-  const total = allUrlList.length;
-  displayProgress(counter, total, "modules checked");
-
-  for (const url of allUrlList) {
-    const denoInfo = await obtainDenoInfo(url);
-
-    // WARNING:
-    // If the output format of "deno info" changes in the future,
-    // this function may not work as expected.
-    const depsUrlList = denoInfo
-      .split("\n")
-      .filter((line) => regexpToFilterUrl.test(line))
-      .map((line) => {
-        return line
-          .trim()
-          .replace(regexpToRemoveBeforeUrl, "http")
-          .replace(regexpToRemoveAfterUrl, "");
-      });
-
-    for (const depsUrl of depsUrlList) {
-      collectedList.add(depsUrl);
-    }
-
-    displayProgress(++counter, total, "modules checked");
-  }
-
-  return collectedList;
-}
-
-// OPTIMIZE:
-// If the number of cached modules is large,
-// execution will take noticeably longer.
-async function collectAllUsesModuleURL(allUrlList) {
-  const collectedData = {};
-
-  const regexpToFilterUrl = (() => {
-    // NOTE:
-    // The output format of "deno info" has been changed since Deno v1.4.0
-    if (checkDenoVersion("1.4.0")) {
-      return new RegExp("^.{3}\\shttps?://");
-    } else {
-      return new RegExp("^\\s{2}.{3}\\shttps?://");
-    }
-  })();
-
-  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
-  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
-
-  let counter = 0;
-  const total = allUrlList.length;
-  displayProgress(counter, total, "modules checked");
-
-  for (const url of allUrlList) {
-    const denoInfo = await obtainDenoInfo(url);
-
-    // WARNING:
-    // If the output format of "deno info" changes in the future,
-    // this function may not work as expected.
-    const depsUrlList = new Set(
-      denoInfo
-        .split("\n")
-        .filter((line) => regexpToFilterUrl.test(line))
-        .map((line) => {
-          return line
-            .trim()
-            .replace(regexpToRemoveBeforeUrl, "http")
-            .replace(regexpToRemoveAfterUrl, "");
-        }),
-    );
-
-    for (const depsUrl of depsUrlList) {
-      if (collectedData[depsUrl] === undefined) {
-        collectedData[depsUrl] = new Set();
-      }
-
-      collectedData[depsUrl].add(url);
-    }
-
-    displayProgress(++counter, total, "modules checked");
-  }
-
-  return collectedData;
 }
 
 // TODO:
