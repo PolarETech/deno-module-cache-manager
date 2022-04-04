@@ -8,10 +8,12 @@ CLI tool to manage Deno cached modules which are stored in DENO_DIR by remote im
 - Search for cached module URLs
 - Print file paths of cached modules
 - Print download date and time of chached modules
-- Print which modules depend on it
+- Print which modules depend on it (*)
 - Delete cached module files by specifying URL
-- List cached modules that are not dependencies of another cached module
+- List cached modules that are not dependencies of another cached module (*)
 - List file paths of cached modules whose URLs are missing
+
+*\* Import maps is not supported in the current version.*
 
 ## Requirements
 
