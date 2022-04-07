@@ -1,5 +1,10 @@
 # Releases
 
+
+### 0.2.2 / 2022.04.07
+
+- perf: change process of collecting deps info for all modules from sync to async
+
 ### 0.2.1 / 2022.03.31
 
 - fix: output URL has a $ character at the end
