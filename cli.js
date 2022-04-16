@@ -551,15 +551,15 @@ function displayPathOfFileWithMissingURL() {
 
 function displayCursor(show = true) {
   // NOTE:
-  // Before Deno v1.14.0, handling OS signals was unstable.
+  // Before Deno v1.19.0, handling OS signals was unstable.
   // To ensure that the cursor is recovered when SIGINT etc. occurs,
-  // cursor display control only be performed in Deno v1.14.0 or later.
-  // https://github.com/denoland/deno/pull/12512
+  // cursor display control only be performed in Deno v1.19.0 or later.
+  // https://github.com/denoland/deno/pull/13438
   //
   // Handling OS signals is currently not available on Windows.
   // Therefore, Windows is also excluded.
   // https://deno.land/manual@v1.20.1/examples/os_signals
-  if (checkDenoVersion("1.14.0") === false) return;
+  if (checkDenoVersion("1.19.0") === false) return;
   if (Deno.build.os === "windows") return;
 
   const showCursor = () => {
