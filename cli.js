@@ -515,13 +515,13 @@ function deleteFile(moduleData) {
   }
 }
 
-function displayCachedModuleList(moduleData, args) {
-  const sortedUrlList = args.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
-  const maxUrlLength = args.withDate ? moduleData.maxUrlStringLength : undefined;
+function displayCachedModuleList(moduleData, optionFlags) {
+  const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
+  const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : undefined;
 
   for (const url of sortedUrlList) {
     const urlString = (() => {
-      if ((args.withPath || args.uses) && Deno.noColor === false) {
+      if ((optionFlags.withPath || optionFlags.uses) && Deno.noColor === false) {
         return `\x1b[1m${url}\x1b[0m`;
       } else {
         return url;
@@ -529,7 +529,7 @@ function displayCachedModuleList(moduleData, args) {
     })();
 
     const dateString = (() => {
-      if (args.withDate) {
+      if (optionFlags.withDate) {
         const padding = " ".repeat(maxUrlLength - url.length + 2);
         return padding + (moduleData.date(url) ?? "Unknown");
       } else {
@@ -539,12 +539,12 @@ function displayCachedModuleList(moduleData, args) {
 
     console.log(urlString + dateString);
 
-    if (args.withPath || args.uses) {
+    if (optionFlags.withPath || optionFlags.uses) {
       const list = (() => {
         switch (true) {
-          case args.withPath:
+          case optionFlags.withPath:
             return moduleData.relatedFilePath(url);
-          case args.uses:
+          case optionFlags.uses:
             return moduleData.uses(url);
         }
       })();
@@ -758,13 +758,8 @@ function checkDenoVersion(version) {
   return true;
 }
 
-function sortOutArgs() {
-  const args = {
-    targetUrl: undefined,
-    targetNewer: undefined,
-    targetOlder: undefined,
-    invalidUrl: false,
-    invalidDate: false,
+function sortOutArgs(args) {
+  const flags = {
     delete: false,
     help: false,
     leaves: false,
@@ -779,9 +774,22 @@ function sortOutArgs() {
     withPath: false,
   };
 
-  if (Deno.args.length === 0) return args;
+  const target = {
+    url: undefined,
+    newer: undefined,
+    older: undefined,
+  };
 
-  const availableArgs = {
+  const invalidArgs = {
+    url: false,
+    date: false,
+  };
+
+  if (args.length === 0) {
+    return { optionFlags: flags, target, invalidArgs };
+  }
+
+  const availableFlags = {
     "--delete": "delete",
     "-d": "delete",
     "--help": "help",
@@ -801,7 +809,7 @@ function sortOutArgs() {
     "--with-path": "withPath",
   };
 
-  const exclusiveArgs = new Set([
+  const exclusiveFlags = new Set([
     "delete",
     "help",
     "leaves",
@@ -813,19 +821,19 @@ function sortOutArgs() {
   let setExclusive = false;
 
   let key = "";
-  for (const arg of Deno.args) {
-    if (availableArgs[arg]) {
-      key = availableArgs[arg];
+  for (const arg of args) {
+    if (availableFlags[arg]) {
+      key = availableFlags[arg];
 
-      if (exclusiveArgs.has(key)) {
+      if (exclusiveFlags.has(key)) {
         if (setExclusive === false) {
-          args[key] = true;
+          flags[key] = true;
           setExclusive = true;
         } else {
           key = "";
         }
       } else {
-        args[key] = true;
+        flags[key] = true;
       }
 
       continue;
@@ -836,31 +844,31 @@ function sortOutArgs() {
     // - 2. The URL specified first
     switch (key) {
       case "newer": {
-        args.targetNewer = formatDateString(arg);
+        target.newer = formatDateString(arg);
         break;
       }
       case "older": {
-        args.targetOlder = formatDateString(arg);
+        target.older = formatDateString(arg);
         break;
       }
       case "delete":
-        args.targetUrl = arg;
+        target.url = arg;
         break;
       default:
-        args.targetUrl = args.targetUrl ?? arg;
+        target.url = target.url ?? arg;
     }
 
     key = "";
   }
 
-  args.withPath = args.delete ? true : args.withPath;
-  args.withPath = args.uses ? false : args.withPath;
+  flags.withPath = flags.delete ? true : flags.withPath;
+  flags.withPath = flags.uses ? false : flags.withPath;
 
-  args.invalidUrl = (args.name || args.delete) && args.targetUrl === undefined;
-  args.invalidDate = (args.newer && args.targetNewer === undefined) ||
-    (args.older && args.targetOlder === undefined);
+  invalidArgs.url = (flags.name || flags.delete) && target.url === undefined;
+  invalidArgs.date = (flags.newer && target.newer === undefined) ||
+    (flags.older && target.older === undefined);
 
-  return args;
+  return { optionFlags: flags, target, invalidArgs };
 }
 
 async function main() {
@@ -869,41 +877,37 @@ async function main() {
     Deno.exit();
   }
 
-  const args = sortOutArgs();
+  const { optionFlags, target, invalidArgs } = sortOutArgs(Deno.args);
 
-  if (args.version) {
+  if (optionFlags.version) {
     displayResultMessage({ name: "version", version: version });
     Deno.exit();
   }
 
-  if (args.help) {
+  if (optionFlags.help) {
     displayHelp();
     Deno.exit();
   }
 
-  if (args.missingUrl) {
+  if (optionFlags.missingUrl) {
     displayPathOfFileWithMissingURL();
     Deno.exit();
   }
 
-  if (args.invalidUrl) displayResultMessage({ name: "moduleNameRequired" });
-  if (args.invalidDate) displayResultMessage({ name: "invalidDate" });
-  if (args.invalidUrl || args.invalidDate) Deno.exit();
+  if (invalidArgs.url) displayResultMessage({ name: "moduleNameRequired" });
+  if (invalidArgs.date) displayResultMessage({ name: "invalidDate" });
+  if (invalidArgs.url || invalidArgs.date) Deno.exit();
 
-  if (args.leaves || args.uses) {
+  if (optionFlags.leaves || optionFlags.uses) {
     if (displayConfirmationMessage({ name: "longTime" }) === false) {
       Deno.exit();
     }
   }
 
   const moduleData = new ModuleData();
-  moduleData.collectModule(baseDepsPath, {
-    url: args.targetUrl,
-    newer: args.targetNewer,
-    older: args.targetOlder,
-  });
+  moduleData.collectModule(baseDepsPath, target);
 
-  if (args.leaves) await moduleData.extractLeavesModule();
+  if (optionFlags.leaves) await moduleData.extractLeavesModule();
 
   const moduleCount = moduleData.targetedUrlListLength;
   if (moduleCount === 0) {
@@ -911,14 +915,14 @@ async function main() {
     Deno.exit();
   }
 
-  if (args.withPath) moduleData.collectRelatedFilePath();
+  if (optionFlags.withPath) moduleData.collectRelatedFilePath();
 
-  if (args.uses) await moduleData.collectUsesModule();
+  if (optionFlags.uses) await moduleData.collectUsesModule();
 
-  displayCachedModuleList(moduleData, args);
+  displayCachedModuleList(moduleData, optionFlags);
 
   switch (true) {
-    case args.delete:
+    case optionFlags.delete:
       deleteFile(moduleData);
       break;
     default:
