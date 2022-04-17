@@ -716,6 +716,38 @@ function displayResultMessage(type) {
   if (message) console.log(message);
 }
 
+function displaySearchCriteria(option, target) {
+  let message = "";
+
+  if (option.missingUrl) {
+    message += ` - Search with option "--missing-url"\n`;
+  }
+  if (option.leaves) {
+    message += ` - Search with option "--leaves"\n`;
+  }
+  if (option.uses) {
+    message += ` - Search with option "--uses"\n`;
+  }
+
+  if (target.url) {
+    message += ` - Module URL contains "${target.url}"\n`;
+  }
+  if (target.newer) {
+    message += ` - Download date is equal to or newer than "${target.newer}"\n`;
+  }
+  if (target.older) {
+    message += ` - Download date is equal to or older than "${target.older}"\n`;
+  }
+
+  if (message === "") {
+    message = " - All cached modules\n";
+  }
+
+  message = `Search criteria:\n${message}`;
+
+  Deno.stdout.writeSync(new TextEncoder().encode(message));
+}
+
 function displayHelp() {
   const t = " ".repeat(4);
   console.log(
@@ -891,6 +923,7 @@ async function main() {
 
   if (optionFlags.missingUrl) {
     displayPathOfFileWithMissingURL();
+    displaySearchCriteria(optionFlags, {});
     Deno.exit();
   }
 
@@ -912,6 +945,7 @@ async function main() {
   const moduleCount = moduleData.targetedUrlListLength;
   if (moduleCount === 0) {
     displayResultMessage({ name: "foundNoModule" });
+    displaySearchCriteria(optionFlags, target);
     Deno.exit();
   }
 
@@ -931,6 +965,7 @@ async function main() {
         moduleCount,
         fileCount: moduleData.relatedFilePathListLength,
       });
+      displaySearchCriteria(optionFlags, target);
   }
 }
 
