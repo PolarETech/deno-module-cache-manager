@@ -1,5 +1,8 @@
 # Releases
 
+### 0.2.3 / 2022.04.17
+
+- fix: Deno version check to use Deno.addSignalListener
 
 ### 0.2.2 / 2022.04.07
 
