@@ -70,27 +70,44 @@ class ModuleData {
     return this.data[url].uses.sort();
   }
 
-  collectModule(depsPath, targetUrl) {
+  collectModule(depsPath, target) {
     if (depsPath.endsWith("/")) depsPath = depsPath.slice(0, -1);
     if (isDirectoryExist(depsPath) === false) return;
 
     for (const dirEntry of Deno.readDirSync(depsPath)) {
       if (dirEntry.isDirectory) {
         const subDir = `${depsPath}/${dirEntry.name}`;
-        this.collectModule(subDir, targetUrl);
+        this.collectModule(subDir, target);
         continue;
       }
 
       if (dirEntry.isFile && dirEntry.name.endsWith(".metadata.json")) {
         const metadata = obtainValueFromMetadata(`${depsPath}/${dirEntry.name}`);
-        if (metadata.url === undefined) continue;
+        const url = metadata.url;
+        if (url === undefined) continue;
 
-        this.data[metadata.url] = {
+        this.data[url] = {
           hash: dirEntry.name.replace(".metadata.json", ""),
-          target: metadata.url.includes(targetUrl) || targetUrl === undefined,
+          target: url.includes(target.url) || target.url === undefined,
           date: metadata.date,
           types: metadata.types,
         };
+
+        if (this.data[url].target === false) continue;
+        if (target.newer === undefined && target.older === undefined) continue;
+
+        if (this.data[url].date === undefined) {
+          this.data[url].target = false;
+          continue;
+        }
+        if (target.newer && this.data[url].date < target.newer) {
+          this.data[url].target = false;
+          continue;
+        }
+        if (target.older && this.data[url].date > target.older) {
+          this.data[url].target = false;
+          continue;
+        }
       }
     }
   }
@@ -354,6 +371,28 @@ function isDirectoryExist(path) {
   } catch (_e) {
     return false;
   }
+}
+
+/**
+ * Convert string representing date and time to ISO format date string.
+ * If the given string cannot be converted to Date object, return undefined.
+ * @param {string} dateString
+ * @returns {(string|undefined)} ISO format date string or undefined
+ */
+function formatDateString(dateString) {
+  // Two values, year and monthIndex, are required
+  const validInput = /^\d{1,4}[-/]\d{1,2}(([-/]\d{1,2})?|[-/]\d{1,2}[T ]\d{1,2}((:\d{1,2}){0,2}|(:\d{1,2}){2}\.\d{1,3}))\D*$/;
+  if (validInput.test(dateString) === false) return undefined;
+
+  const re = /\d+/g;
+  const dateArray = dateString
+    .match(re)
+    .map((v) => Number.parseInt(v, 10));
+
+  dateArray[1] -= 1; // adjust for monthIndex
+
+  const dateObject = new Date(Date.UTC(...dateArray));
+  return dateObject.toISOString();
 }
 
 /**
@@ -638,6 +677,8 @@ function displayResultMessage(type) {
         return `Deno module cache manager ${type.version}`;
       case "versionError":
         return `INFO: Deno version ${type.version} or later is required`;
+      case "invalidDate":
+        return "INFO: The specified date is invalid";
       case "moduleNameRequired":
         return "INFO: Please specify the module name";
       case "foundNoModule":
@@ -692,6 +733,12 @@ function displayHelp() {
       `${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs\n` +
       `${t}                              ${t}Perform a substring search for MODULE_URL\n` +
       `${t}                              ${t}and the matched module URLs are objects of printing\n` +
+      `${t}    --newer <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` +
+      `${t}                              ${t}equal to or newer than <DATE_STRING>\n` +
+      `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` +
+      `${t}    --older <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` +
+      `${t}                              ${t}equal to or older than <DATE_STRING>\n` +
+      `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` +
       `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` +
       `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` +
       `${t}-V, --version                 ${t}Print version information\n` +
@@ -714,11 +761,17 @@ function checkDenoVersion(version) {
 function sortOutArgs() {
   const args = {
     targetUrl: undefined,
+    targetNewer: undefined,
+    targetOlder: undefined,
+    invalidUrl: false,
+    invalidDate: false,
     delete: false,
     help: false,
     leaves: false,
     missingUrl: false,
     name: false,
+    newer: false,
+    older: false,
     sortDate: false,
     uses: false,
     version: false,
@@ -738,6 +791,8 @@ function sortOutArgs() {
     "--name": "name",
     "-n": "name",
     "--url": "name",
+    "--newer": "newer",
+    "--older": "older",
     "--sort-date": "sortDate",
     "--uses": "uses",
     "--version": "version",
@@ -779,12 +834,31 @@ function sortOutArgs() {
     // Priority when multiple URLs are specified in arguments:
     // - 1. The URL specified immediately after the delete argument when executing the delete function
     // - 2. The URL specified first
-    args.targetUrl = (key === "delete") ? arg : args.targetUrl ?? arg;
+    switch (key) {
+      case "newer": {
+        args.targetNewer = formatDateString(arg);
+        break;
+      }
+      case "older": {
+        args.targetOlder = formatDateString(arg);
+        break;
+      }
+      case "delete":
+        args.targetUrl = arg;
+        break;
+      default:
+        args.targetUrl = args.targetUrl ?? arg;
+    }
+
     key = "";
   }
 
   args.withPath = args.delete ? true : args.withPath;
   args.withPath = args.uses ? false : args.withPath;
+
+  args.invalidUrl = (args.name || args.delete) && args.targetUrl === undefined;
+  args.invalidDate = (args.newer && args.targetNewer === undefined) ||
+    (args.older && args.targetOlder === undefined);
 
   return args;
 }
@@ -812,10 +886,9 @@ async function main() {
     Deno.exit();
   }
 
-  if ((args.name || args.delete) && args.targetUrl === undefined) {
-    displayResultMessage({ name: "moduleNameRequired" });
-    Deno.exit();
-  }
+  if (args.invalidUrl) displayResultMessage({ name: "moduleNameRequired" });
+  if (args.invalidDate) displayResultMessage({ name: "invalidDate" });
+  if (args.invalidUrl || args.invalidDate) Deno.exit();
 
   if (args.leaves || args.uses) {
     if (displayConfirmationMessage({ name: "longTime" }) === false) {
@@ -824,7 +897,11 @@ async function main() {
   }
 
   const moduleData = new ModuleData();
-  moduleData.collectModule(baseDepsPath, args.targetUrl);
+  moduleData.collectModule(baseDepsPath, {
+    url: args.targetUrl,
+    newer: args.targetNewer,
+    older: args.targetOlder,
+  });
 
   if (args.leaves) await moduleData.extractLeavesModule();
 
