@@ -496,13 +496,6 @@ function collectAllHashedFilePath(type = "") {
 // Empty folders are not deleted
 function deleteFile(moduleData) {
   const filePathList = moduleData.relatedFilePathList;
-  const fileCount = moduleData.relatedFilePathListLength;
-
-  if (fileCount === 0) return;
-
-  if (displayConfirmationMessage({ name: "delete", fileCount }) === false) {
-    Deno.exit();
-  }
 
   for (const path of filePathList) {
     try {
@@ -516,6 +509,8 @@ function deleteFile(moduleData) {
 }
 
 function displayCachedModuleList(moduleData, optionFlags) {
+  if (optionFlags.delete && optionFlags.skipConfirmation) return;
+
   const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
   const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : undefined;
 
@@ -641,7 +636,9 @@ function displayProgress(current, total, suffix = "done") {
   }
 }
 
-function displayConfirmationMessage(type) {
+function displayConfirmationMessage(type, skip = false) {
+  if (skip) return true;
+
   const message = (() => {
     switch (type.name) {
       case "delete":
@@ -779,7 +776,8 @@ function displayHelp() {
       `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` +
       `${t}-V, --version                 ${t}Print version information\n` +
       `${t}    --with-date               ${t}Print cached module URLs along with their download date and time\n` +
-      `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them`,
+      `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them\n` +
+      `${t}-y, --yes                     ${t}Automatically answer yes for confirmation`,
   );
 }
 
@@ -803,6 +801,7 @@ function sortOutArgs(args) {
     name: false,
     newer: false,
     older: false,
+    skipConfirmation: false,
     sortDate: false,
     uses: false,
     version: false,
@@ -843,6 +842,8 @@ function sortOutArgs(args) {
     "-V": "version",
     "--with-date": "withDate",
     "--with-path": "withPath",
+    "--yes": "skipConfirmation",
+    "-y": "skipConfirmation",
   };
 
   const exclusiveFlags = new Set([
@@ -937,7 +938,12 @@ async function main() {
   if (invalidArgs.url || invalidArgs.date) Deno.exit();
 
   if (optionFlags.leaves || optionFlags.uses) {
-    if (displayConfirmationMessage({ name: "longTime" }) === false) {
+    if (
+      displayConfirmationMessage(
+        { name: "longTime" },
+        optionFlags.skipConfirmation,
+      ) === false
+    ) {
       Deno.exit();
     }
   }
@@ -962,9 +968,19 @@ async function main() {
   displayCachedModuleList(moduleData, optionFlags);
 
   switch (true) {
-    case optionFlags.delete:
-      deleteFile(moduleData);
+    case optionFlags.delete: {
+      const fileCount = moduleData.relatedFilePathListLength;
+      if (fileCount === 0) Deno.exit();
+      if (
+        displayConfirmationMessage(
+          { name: "delete", fileCount },
+          optionFlags.skipConfirmation,
+        )
+      ) {
+        deleteFile(moduleData);
+      }
       break;
+    }
     default:
       displayResultMessage({
         name: "foundModule",
