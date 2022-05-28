@@ -4,6 +4,8 @@ const version = "0.2.3";
 const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
+let quietMode = false;
+
 class ModuleData {
   data = {};
 
@@ -500,7 +502,7 @@ function deleteFile(moduleData) {
   for (const path of filePathList) {
     try {
       Deno.removeSync(path);
-      console.log(`DELETED: ${path}`);
+      displayResultMessage({ name: "deleteFile", filePath: path });
     } catch (e) {
       console.error(e);
       Deno.exit(1);
@@ -621,6 +623,8 @@ function displayCursor(show = true) {
 }
 
 function displayProgress(current, total, suffix = "done") {
+  if (quietMode) return;
+
   const digits = String(total).length;
   const text = ` * ${String(current).padStart(digits, " ")} / ${total} ${suffix}`;
 
@@ -668,6 +672,8 @@ function displayConfirmationMessage(type, skip = false) {
 }
 
 function displayResultMessage(type) {
+  if (quietMode) return;
+
   const message = (() => {
     switch (type.name) {
       case "version":
@@ -705,6 +711,8 @@ function displayResultMessage(type) {
         } else {
           return `\nTotal: ${type.fileCount} files are found`;
         }
+      case "deleteFile":
+        return `DELETED: ${type.filePath}`;
       default:
         return undefined;
     }
@@ -714,6 +722,8 @@ function displayResultMessage(type) {
 }
 
 function displaySearchCriteria(option, target) {
+  if (quietMode) return;
+
   let message = "";
 
   if (option.missingUrl) {
@@ -746,6 +756,7 @@ function displaySearchCriteria(option, target) {
 }
 
 function displaySearchLocation() {
+  if (quietMode) return;
   console.log(`Search locations:\n - ${baseDepsPath}\n - ${baseGenPath}`);
 }
 
@@ -772,6 +783,7 @@ function displayHelp() {
       `${t}    --older <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` +
       `${t}                              ${t}equal to or older than <DATE_STRING>\n` +
       `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` +
+      `${t}-q, --quiet                   ${t}Suppress result output\n` +
       `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` +
       `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` +
       `${t}-V, --version                 ${t}Print version information\n` +
@@ -801,6 +813,7 @@ function sortOutArgs(args) {
     name: false,
     newer: false,
     older: false,
+    quiet: false,
     skipConfirmation: false,
     sortDate: false,
     uses: false,
@@ -836,6 +849,8 @@ function sortOutArgs(args) {
     "--url": "name",
     "--newer": "newer",
     "--older": "older",
+    "--quiet": "quiet",
+    "-q": "quiet",
     "--sort-date": "sortDate",
     "--uses": "uses",
     "--version": "version",
@@ -925,6 +940,8 @@ async function main() {
     displayHelp();
     Deno.exit();
   }
+
+  quietMode = optionFlags.quiet;
 
   if (optionFlags.missingUrl) {
     displayPathOfFileWithMissingURL();
