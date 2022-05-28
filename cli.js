@@ -748,6 +748,10 @@ function displaySearchCriteria(option, target) {
   Deno.stdout.writeSync(new TextEncoder().encode(message));
 }
 
+function displaySearchLocation() {
+  console.log(`Search locations:\n - ${baseDepsPath}\n - ${baseGenPath}`);
+}
+
 function displayHelp() {
   const t = " ".repeat(4);
   console.log(
@@ -924,6 +928,7 @@ async function main() {
   if (optionFlags.missingUrl) {
     displayPathOfFileWithMissingURL();
     displaySearchCriteria(optionFlags, {});
+    displaySearchLocation();
     Deno.exit();
   }
 
@@ -946,6 +951,7 @@ async function main() {
   if (moduleCount === 0) {
     displayResultMessage({ name: "foundNoModule" });
     displaySearchCriteria(optionFlags, target);
+    displaySearchLocation();
     Deno.exit();
   }
 
@@ -966,6 +972,7 @@ async function main() {
         fileCount: moduleData.relatedFilePathListLength,
       });
       displaySearchCriteria(optionFlags, target);
+      displaySearchLocation();
   }
 }
 
