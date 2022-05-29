@@ -5,6 +5,7 @@ const requiredMinDenoVer = "1.2.0";
 const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
 
 let quietMode = false;
+let verboseMode = false;
 
 class ModuleData {
   data = {};
@@ -722,7 +723,7 @@ function displayResultMessage(type) {
 }
 
 function displaySearchCriteria(option, target) {
-  if (quietMode) return;
+  if (verboseMode === false) return;
 
   let message = "";
 
@@ -756,7 +757,7 @@ function displaySearchCriteria(option, target) {
 }
 
 function displaySearchLocation() {
-  if (quietMode) return;
+  if (verboseMode === false) return;
   console.log(`Search locations:\n - ${baseDepsPath}\n - ${baseGenPath}`);
 }
 
@@ -786,6 +787,7 @@ function displayHelp() {
       `${t}-q, --quiet                   ${t}Suppress result output\n` +
       `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` +
       `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` +
+      `${t}-v, --verbose                 ${t}Print additional information in result output\n` +
       `${t}-V, --version                 ${t}Print version information\n` +
       `${t}    --with-date               ${t}Print cached module URLs along with their download date and time\n` +
       `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them\n` +
@@ -817,6 +819,7 @@ function sortOutArgs(args) {
     skipConfirmation: false,
     sortDate: false,
     uses: false,
+    verbose: false,
     version: false,
     withDate: false,
     withPath: false,
@@ -853,6 +856,8 @@ function sortOutArgs(args) {
     "-q": "quiet",
     "--sort-date": "sortDate",
     "--uses": "uses",
+    "--verbose": "verbose",
+    "-v": "verbose",
     "--version": "version",
     "-V": "version",
     "--with-date": "withDate",
@@ -916,6 +921,8 @@ function sortOutArgs(args) {
   flags.withPath = flags.delete ? true : flags.withPath;
   flags.withPath = flags.uses ? false : flags.withPath;
 
+  flags.verbose = flags.quiet ? false : flags.verbose; // Priority: quiet > verbose
+
   invalidArgs.url = (flags.name || flags.delete) && target.url === undefined;
   invalidArgs.date = (flags.newer && target.newer === undefined) ||
     (flags.older && target.older === undefined);
@@ -942,6 +949,7 @@ async function main() {
   }
 
   quietMode = optionFlags.quiet;
+  verboseMode = optionFlags.verbose;
 
   if (optionFlags.missingUrl) {
     displayPathOfFileWithMissingURL();
