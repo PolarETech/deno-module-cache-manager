@@ -495,6 +495,31 @@ function collectAllHashedFilePath(type = "") {
   return pathList;
 }
 
+function collectPathOfFileWithMissingURL() {
+  const pathList = collectAllHashedFilePath();
+
+  const metadataExt = ".metadata.json";
+
+  // REVIEW:
+  // I have never seen .d.ts file created in the gen/http(s) directory.
+  // Is it necessary to handle the .d.ts extention?
+  // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
+  const regexpToRemoveExt = new RegExp(/\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/);
+
+  const pathListWithMissingURL = [];
+  for (const path of pathList) {
+    if (path.startsWith(baseDepsPath) && path.endsWith(".metadata.json")) continue;
+
+    const adjustedPath = path.replace(regexpToRemoveExt, "");
+    const depsMetadataFilePath = adjustedPath.replace(baseGenPath, baseDepsPath) + metadataExt;
+
+    if (isFileExist(depsMetadataFilePath)) continue;
+    pathListWithMissingURL.push(path);
+  }
+
+  return pathListWithMissingURL;
+}
+
 // TODO:
 // Empty folders are not deleted
 function deleteFile(moduleData) {
@@ -551,38 +576,6 @@ function displayCachedModuleList(moduleData, optionFlags) {
         console.log(` - ${value}`);
       }
     }
-  }
-}
-
-function displayPathOfFileWithMissingURL() {
-  const pathList = collectAllHashedFilePath();
-
-  const metadataExt = ".metadata.json";
-
-  // REVIEW:
-  // I have never seen .d.ts file created in the gen/http(s) directory.
-  // Is it necessary to handle the .d.ts extention?
-  // https://github.com/denoland/deno/blob/v1.20.1/cli/cache.rs#L186
-  const regexpToRemoveExt = new RegExp(/\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/);
-
-  let fileCount = 0;
-
-  for (const path of pathList) {
-    if (path.startsWith(baseDepsPath) && path.endsWith(".metadata.json")) continue;
-
-    const adjustedPath = path.replace(regexpToRemoveExt, "");
-    const depsMetadataFilePath = adjustedPath.replace(baseGenPath, baseDepsPath) + metadataExt;
-
-    if (isFileExist(depsMetadataFilePath)) continue;
-
-    console.log(path);
-    fileCount++;
-  }
-
-  if (fileCount === 0) {
-    displayResultMessage({ name: "foundNoFile" });
-  } else {
-    displayResultMessage({ name: "foundFile", fileCount });
   }
 }
 
@@ -952,7 +945,16 @@ async function main() {
   verboseMode = optionFlags.verbose;
 
   if (optionFlags.missingUrl) {
-    displayPathOfFileWithMissingURL();
+    const filePathList = collectPathOfFileWithMissingURL();
+    const fileCount = filePathList.length;
+
+    if (fileCount === 0) {
+      displayResultMessage({ name: "foundNoFile" });
+    } else {
+      filePathList.forEach((path) => console.log(path));
+      displayResultMessage({ name: "foundFile", fileCount });
+    }
+
     displaySearchCriteria(optionFlags, {});
     displaySearchLocation();
     Deno.exit();
