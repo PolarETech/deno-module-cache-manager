@@ -78,6 +78,12 @@ deno-module-cache-manager --leaves
 # List file paths of cached modules whose URLs are missing
 deno-module-cache-manager --missing-url
 
+# Verbose mode
+deno-module-cache-manager -v
+
+# Suppress result output
+deno-module-cache-manager -q
+
 # Print help information
 deno-module-cache-manager -h
 
@@ -107,18 +113,19 @@ https://deno.land/std@0.130.0/streams/conversion.ts
 https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
 
 Total: 10 modules are found
-Search criteria:
- - All cached modules
 
 
-# Substring search of cached module URLs
-$ deno-module-cache-manager -n examples
+# Substring search of cached module URLs (verbose mode)
+$ deno-module-cache-manager -n examples -v
 https://deno.land/std@0.130.0/examples/cat.ts
 https://deno.land/std@0.130.0/examples/welcome.ts
 
 Total: 2 modules are found
 Search criteria:
  - Module URL contains "examples"
+Search locations:
+ - /deno-dir/deps
+ - /deno-dir/gen
 
 
 # Print file paths
@@ -131,8 +138,6 @@ https://deno.land/std@0.130.0/examples/welcome.ts
  - /deno-dir/gen/https/deno.land/f6ca893377de0e79d1ee801e46912138bde275dc2c9974bfc7a53ffbf5b65b90.meta
 
 Total: 1 module is found (5 files)
-Search criteria:
- - Module URL contains "welcome"
 
 
 # Print download date and time (sorted)
@@ -148,8 +153,6 @@ https://deno.land/std@0.130.0/streams/conversion.ts  2022-04-18T09:36:49.000Z
 https://deno.land/std@0.130.0/examples/welcome.ts    2022-04-17T15:20:16.000Z
 
 Total: 9 modules are found
-Search criteria:
- - Module URL contains "std"
 
 
 # Search by download date and time of cached modules
@@ -164,8 +167,6 @@ https://deno.land/std@0.130.0/io/types.d.ts          2022-04-18T09:36:50.000Z
 https://deno.land/std@0.130.0/streams/conversion.ts  2022-04-18T09:36:49.000Z
 
 Total: 8 modules are found
-Search criteria:
- - Download date is equal to or newer than "2022-04-18T09:36:00.000Z"
 
 
 # Print which modules depend on it
@@ -179,8 +180,6 @@ https://deno.land/std@0.130.0/bytes/mod.ts
  - https://deno.land/std@0.130.0/io/buffer.ts
 
 Total: 3 modules are found
-Search criteria:
- - Module URL contains "bytes"
 
 
 # Delete cached module files
@@ -208,8 +207,6 @@ https://deno.land/std@0.130.0/examples/cat.ts
 https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
 
 Total: 2 modules are found
-Search criteria:
- - All cached modules
 ```
 
 ## Uninstallation
