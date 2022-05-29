@@ -537,8 +537,6 @@ function deleteFile(moduleData) {
 }
 
 function displayCachedModuleList(moduleData, optionFlags) {
-  if (optionFlags.delete && optionFlags.skipConfirmation) return;
-
   const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
   const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : undefined;
 
@@ -944,6 +942,7 @@ async function main() {
   quietMode = optionFlags.quiet;
   verboseMode = optionFlags.verbose;
 
+  // Output file list and results for missing url option
   if (optionFlags.missingUrl) {
     const filePathList = collectPathOfFileWithMissingURL();
     const fileCount = filePathList.length;
@@ -960,27 +959,31 @@ async function main() {
     Deno.exit();
   }
 
-  if (invalidArgs.url) displayResultMessage({ name: "moduleNameRequired" });
-  if (invalidArgs.date) displayResultMessage({ name: "invalidDate" });
-  if (invalidArgs.url || invalidArgs.date) Deno.exit();
-
-  if (optionFlags.leaves || optionFlags.uses) {
-    if (
-      displayConfirmationMessage(
-        { name: "longTime" },
-        optionFlags.skipConfirmation,
-      ) === false
-    ) {
-      Deno.exit();
-    }
+  // Output invalid argument error
+  if (invalidArgs.url || invalidArgs.date) {
+    if (invalidArgs.url) displayResultMessage({ name: "moduleNameRequired" });
+    if (invalidArgs.date) displayResultMessage({ name: "invalidDate" });
+    Deno.exit();
   }
 
+  // Confirmation for leaves and uses options
+  if (optionFlags.leaves || optionFlags.uses) {
+    displayConfirmationMessage(
+      { name: "longTime" },
+      optionFlags.skipConfirmation,
+    ) ||
+      Deno.exit();
+  }
+
+  // Collect basic information on cached modules
   const moduleData = new ModuleData();
   moduleData.collectModule(baseDepsPath, target);
 
   if (optionFlags.leaves) await moduleData.extractLeavesModule();
 
   const moduleCount = moduleData.targetedUrlListLength;
+
+  // Output no module error
   if (moduleCount === 0) {
     displayResultMessage({ name: "foundNoModule" });
     displaySearchCriteria(optionFlags, target);
@@ -988,35 +991,33 @@ async function main() {
     Deno.exit();
   }
 
+  // Collect additional information on cached modules
   if (optionFlags.withPath) moduleData.collectRelatedFilePath();
-
   if (optionFlags.uses) await moduleData.collectUsesModule();
 
-  displayCachedModuleList(moduleData, optionFlags);
+  // Process for delete option
+  if (optionFlags.delete) {
+    optionFlags.skipConfirmation ||
+      displayCachedModuleList(moduleData, optionFlags);
 
-  switch (true) {
-    case optionFlags.delete: {
-      const fileCount = moduleData.relatedFilePathListLength;
-      if (fileCount === 0) Deno.exit();
-      if (
-        displayConfirmationMessage(
-          { name: "delete", fileCount },
-          optionFlags.skipConfirmation,
-        )
-      ) {
-        deleteFile(moduleData);
-      }
-      break;
-    }
-    default:
-      displayResultMessage({
-        name: "foundModule",
-        moduleCount,
-        fileCount: moduleData.relatedFilePathListLength,
-      });
-      displaySearchCriteria(optionFlags, target);
-      displaySearchLocation();
+    displayConfirmationMessage({
+      name: "delete",
+      fileCount: moduleData.relatedFilePathListLength,
+    }, optionFlags.skipConfirmation) &&
+      deleteFile(moduleData);
+
+    Deno.exit();
   }
+
+  // Output module list and results for name, leaves, and uses options
+  displayCachedModuleList(moduleData, optionFlags);
+  displayResultMessage({
+    name: "foundModule",
+    moduleCount,
+    fileCount: moduleData.relatedFilePathListLength,
+  });
+  displaySearchCriteria(optionFlags, target);
+  displaySearchLocation();
 }
 
 main();
