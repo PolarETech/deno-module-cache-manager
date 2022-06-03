@@ -279,7 +279,7 @@ async function obtainDenoInfo(url) {
   // Output with "--json" option is difficult to use
   // because the format changes significantly depending on the Deno version.
   const process = Deno.run({
-    cmd: ["deno", "info", url],
+    cmd: ["deno", "info", "--unstable", url],
     env: { NO_COLOR: "1" },
     stdout: "piped",
     stderr: "piped",
@@ -299,7 +299,7 @@ async function obtainDenoInfo(url) {
     return output;
   } else {
     const errorString = new TextDecoder().decode(stderr);
-    console.log(`\n\n${errorString.trim()}`);
+    console.error(`\n\n${errorString.trim()}`);
     displayCursor();
 
     process.close();
