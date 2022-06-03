@@ -2,7 +2,9 @@
 
 const version = "0.2.3";
 const requiredMinDenoVer = "1.2.0";
-const { baseDepsPath, baseGenPath } = await obtainCacheLocation();
+
+let baseDepsPath = undefined;
+let baseGenPath = undefined;
 
 let quietMode = false;
 let verboseMode = false;
@@ -263,7 +265,7 @@ async function obtainCacheLocation() {
     process.close();
   } else {
     const errorString = new TextDecoder().decode(stderr);
-    console.log(errorString);
+    console.error(errorString);
     process.close();
     Deno.exit(status.code);
   }
@@ -926,6 +928,8 @@ async function main() {
     displayResultMessage({ name: "versionError", version: requiredMinDenoVer });
     Deno.exit();
   }
+
+  ({ baseDepsPath, baseGenPath } = await obtainCacheLocation());
 
   const { optionFlags, target, invalidArgs } = sortOutArgs(Deno.args);
 
