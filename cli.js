@@ -1,6 +1,6 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-const version = "0.2.3";
+const version = "0.3.0";
 const requiredMinDenoVer = "1.2.0";
 
 let baseDepsPath = undefined;

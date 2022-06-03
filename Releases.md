@@ -1,5 +1,19 @@
 # Releases
 
+### 0.3.0 / 2022.06.03
+
+- feat: search by module download date and time (--newer and --older options)
+- feat: display search criteria
+- feat: display search locations
+- feat: skip confirmation (--yes option)
+- feat: suppress result output (--quiet option)
+- feat: toggle output of result details on and off (--verbose option)
+- fix: obtain cache location before checking Deno version
+- fix: in some cases, unstable flag errors occur when the uses or leaves option is specified
+- refactor: subdivide a parsed arguments object
+- refactor: separate data collection and display processes for --missing-url option
+- refactor: tidy code up in main function
+
 ### 0.2.3 / 2022.04.17
 
 - fix: Deno version check to use Deno.addSignalListener
