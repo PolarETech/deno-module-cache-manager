@@ -1,11 +1,13 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-const version = "0.3.0";
-const requiredMinDenoVer = "1.2.0";
+const SCRIPT_VERSION = "0.3.0";
+const MIN_DENO_VERSION = "1.2.0";
 
+// Cache location
 let baseDepsPath = undefined;
 let baseGenPath = undefined;
 
+// Output mode
 let quietMode = false;
 let verboseMode = false;
 
@@ -445,11 +447,12 @@ function switchObjectKeyAndValue(obj) {
 }
 
 function buildBaseFilePath(url, hash) {
-  url = new URL("", url);
+  const parsedUrl = new URL("", url);
 
-  const protocolDirName = url.protocol.slice(0, -1); // delete trailing letter ":"
-  const hostDirName = url.hostname + (url.port ? `_PORT${url.port}` : "");
-  const pathName = url.pathname.slice(1); // delete leading letter "/"
+  const protocolDirName = parsedUrl.protocol.slice(0, -1); // remove trailing letter ":"
+  const portString = parsedUrl.port ? `_PORT${parsedUrl.port}` : "";
+  const hostDirName = parsedUrl.hostname + portString;
+  const pathName = parsedUrl.pathname.slice(1); // remove leading letter "/"
 
   const depsHashedPath = [baseDepsPath, protocolDirName, hostDirName, hash].join("/");
   const genHashedPath = [baseGenPath, protocolDirName, hostDirName, hash].join("/");
@@ -544,14 +547,15 @@ function displayCachedModuleList(moduleData, optionFlags) {
   const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
   const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : undefined;
 
+  const { startBold, endBold } = (() => {
+    if (Deno.noColor === false && (optionFlags.withPath || optionFlags.uses)) {
+      return { startBold: "\x1b[1m", endBold: "\x1b[0m" };
+    }
+    return { startBold: "", endBold: "" };
+  })();
+
   for (const url of sortedUrlList) {
-    const urlString = (() => {
-      if ((optionFlags.withPath || optionFlags.uses) && Deno.noColor === false) {
-        return `\x1b[1m${url}\x1b[0m`;
-      } else {
-        return url;
-      }
-    })();
+    const urlString = `${startBold}${url}${endBold}`;
 
     const dateString = (() => {
       if (optionFlags.withDate) {
@@ -759,7 +763,7 @@ function displaySearchLocation() {
 function displayHelp() {
   const t = " ".repeat(4);
   console.log(
-    `Deno module cache manager ${version}\n\n` +
+    `Deno module cache manager ${SCRIPT_VERSION}\n\n` +
       `USAGE:\n` +
       `${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js\n` +
       `${t}deno-module-cache-manager [OPTIONS]\n\n` +
@@ -894,6 +898,9 @@ function sortOutArgs(args) {
     // Priority when multiple URLs are specified in arguments:
     // - 1. The URL specified immediately after the delete argument when executing the delete function
     // - 2. The URL specified first
+    // NOTE:
+    // ??= operator does not work properly on "deno run" before Deno v1.6.2
+    // https://github.com/denoland/deno/issues/8627
     switch (key) {
       case "newer": {
         target.newer = formatDateString(arg);
@@ -907,7 +914,7 @@ function sortOutArgs(args) {
         target.url = arg;
         break;
       default:
-        target.url = target.url ?? arg;
+        target.url ?? (target.url = arg);
     }
 
     key = "";
@@ -926,8 +933,8 @@ function sortOutArgs(args) {
 }
 
 async function main() {
-  if (checkDenoVersion(requiredMinDenoVer) === false) {
-    displayResultMessage({ name: "versionError", version: requiredMinDenoVer });
+  if (checkDenoVersion(MIN_DENO_VERSION) === false) {
+    displayResultMessage({ name: "versionError", version: MIN_DENO_VERSION });
     Deno.exit();
   }
 
@@ -935,16 +942,19 @@ async function main() {
 
   const { optionFlags, target, invalidArgs } = sortOutArgs(Deno.args);
 
+  // Output script version information for version option
   if (optionFlags.version) {
-    displayResultMessage({ name: "version", version: version });
+    displayResultMessage({ name: "version", version: SCRIPT_VERSION });
     Deno.exit();
   }
 
+  // Output help information for help option
   if (optionFlags.help) {
     displayHelp();
     Deno.exit();
   }
 
+  // Set output mode to be applied in subsequent processing
   quietMode = optionFlags.quiet;
   verboseMode = optionFlags.verbose;
 
@@ -974,10 +984,9 @@ async function main() {
 
   // Confirmation for leaves and uses options
   if (optionFlags.leaves || optionFlags.uses) {
-    displayConfirmationMessage(
-      { name: "longTime" },
-      optionFlags.skipConfirmation,
-    ) ||
+    displayConfirmationMessage({
+      name: "longTime",
+    }, optionFlags.skipConfirmation) ||
       Deno.exit();
   }
 
