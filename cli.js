@@ -247,7 +247,7 @@ async function obtainCacheLocation() {
   // NOTE:
   // "--json" option with "deno info" was unstable before Deno v1.10
   const process = Deno.run({
-    cmd: ["deno", "info", "--json", "--unstable"],
+    cmd: [Deno.execPath(), "info", "--json", "--unstable"],
     stdout: "piped",
     stderr: "piped",
   });
@@ -274,12 +274,12 @@ async function obtainCacheLocation() {
   return { baseDepsPath: jsonData.modulesCache, baseGenPath: jsonData.typescriptCache };
 }
 
-async function obtainDenoInfo(url) {
+async function obtainDenoInfo(url, execPath) {
   // NOTE:
   // Output with "--json" option is difficult to use
   // because the format changes significantly depending on the Deno version.
   const process = Deno.run({
-    cmd: ["deno", "info", "--unstable", url],
+    cmd: [execPath, "info", "--unstable", url],
     env: { NO_COLOR: "1" },
     stdout: "piped",
     stderr: "piped",
@@ -326,6 +326,8 @@ async function obtainDepsData(urlList) {
   const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
   const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
 
+  const execPath = Deno.execPath();
+
   let counter = 0;
   const total = urlList.length;
   displayProgress(counter, total, "modules checked");
@@ -335,7 +337,7 @@ async function obtainDepsData(urlList) {
   await Promise.all(urlList.map(async (url) => {
     await semaphore.acquire();
 
-    const denoInfo = await obtainDenoInfo(url);
+    const denoInfo = await obtainDenoInfo(url, execPath);
 
     // WARNING:
     // If the output format of "deno info" changes in the future,
