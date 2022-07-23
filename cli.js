@@ -899,11 +899,11 @@ function sortOutArgs(args) {
     // https://github.com/denoland/deno/issues/8627
     switch (key) {
       case "newer": {
-        target.newer = formatDateString(arg);
+        target.newer ?? (target.newer = formatDateString(arg));
         break;
       }
       case "older": {
-        target.older = formatDateString(arg);
+        target.older ?? (target.older = formatDateString(arg));
         break;
       }
       case "delete":
