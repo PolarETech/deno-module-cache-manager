@@ -44,23 +44,19 @@ class ModuleData {
 
   get relatedFilePathList() {
     return this.targetedUrlList
-      .flatMap((v) => this.data[v].relatedFilePath);
+      .flatMap((v) => this.data[v].relatedFilePath ?? []);
   }
 
   get relatedFilePathListLength() {
-    try {
-      return this.targetedUrlList
-        .reduce((v1, v2) => v1 + this.data[v2].relatedFilePath.length, 0);
-    } catch (_e) {
-      return undefined;
-    }
+    return this.targetedUrlList
+      .reduce((v1, v2) => v1 + (this.data[v2].relatedFilePath?.length ?? 0), 0);
   }
 
   get typesDataSpecifiedInHeader() {
     return this.allUrlList
       .filter((v) => this.data[v].types)
       .reduce((object, v) => {
-        object[v] = this.data[v].types;
+        object[v] = this.data[v].types ?? "";
         return object;
       }, {});
   }
@@ -70,11 +66,11 @@ class ModuleData {
   }
 
   relatedFilePath(url) {
-    return this.data[url].relatedFilePath;
+    return this.data[url].relatedFilePath ?? [];
   }
 
   uses(url) {
-    return this.data[url].uses.sort();
+    return this.data[url].uses?.sort() ?? [];
   }
 
   collectModule(depsPath, target) {
@@ -95,7 +91,7 @@ class ModuleData {
 
         this.data[url] = {
           hash: dirEntry.name.replace(".metadata.json", ""),
-          target: url.includes(target.url) || target.url === undefined,
+          target: target.url === undefined || url.includes(target.url),
           date: metadata.date,
           types: metadata.types,
         };
@@ -164,7 +160,7 @@ class ModuleData {
   async extractLeavesModule() {
     await this.collectUsesModule();
     for (const url of this.targetedUrlList) {
-      if (this.data[url].uses.length > 0) {
+      if (this.data[url].uses?.length ?? 0 > 0) {
         this.data[url].target = false;
       }
     }
@@ -1029,7 +1025,7 @@ async function main() {
   displayResultMessage({
     name: "foundModule",
     moduleCount,
-    fileCount: moduleData.relatedFilePathListLength,
+    fileCount: optionFlags.withPath ? moduleData.relatedFilePathListLength : undefined,
   });
   displaySearchCriteria(optionFlags, target);
   displaySearchLocation();
