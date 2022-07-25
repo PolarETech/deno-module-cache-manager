@@ -531,7 +531,7 @@ function deleteFile(moduleData) {
   for (const path of filePathList) {
     try {
       Deno.removeSync(path);
-      displayResultMessage({ name: "deleteFile", filePath: path });
+      displayResultMessage({ name: "deletedFile", filePath: path });
     } catch (e) {
       console.error(e);
       Deno.exit(1);
@@ -636,28 +636,119 @@ function displayProgress(current, total, suffix = "done") {
   }
 }
 
+/**
+ * @typedef {(
+ *  |{ name: "delete", fileCount: number }
+ *  |{ name: "longtime" }
+ * )} ConfirmationType
+ */
+
+/**
+ * @typedef {(
+ *  |{ name: "version", version: string }
+ *  |{ name: "versionError", version: string }
+ *  |{ name: "invalidDate" }
+ *  |{ name: "moduleNameRequired" }
+ *  |{ name: "foundModule", moduleCount: number, fileCount?: number }
+ *  |{ name: "foundFile", fileCount: number }
+ *  |{ name: "deletedFile", filePath: string }
+ * )} ResultType
+ */
+
+/**
+ * Generate string for display message.
+ * @param {(ConfirmationType|ResultType)} type
+ * @returns {string} Message string
+ */
+function generateMessage(type) {
+  switch (type.name) {
+    /*
+     * Confirmation messages
+     */
+    case "delete":
+      switch (type.fileCount) {
+        case undefined:
+          throw new Error("Number of files is unknown.");
+        case 0:
+          throw new Error("There are no files to delete.");
+        case 1:
+          return "\nThis operation cannot be undone.\n" +
+            `Are you sure you want to delete the above ${type.fileCount} file? (y/N): `;
+        default:
+          return "\nThis operation cannot be undone.\n" +
+            `Are you sure you want to delete the above ${type.fileCount} files? (y/N): `;
+      }
+    case "longTime":
+      return "It may take a very long time. Are you sure you want to start the process? (y/N): ";
+    /*
+     * Result messages
+     */
+    case "version":
+      return `Deno module cache manager ${type.version}`;
+    case "versionError":
+      return `INFO: Deno version ${type.version} or later is required`;
+    case "invalidDate":
+      return "INFO: The specified date is invalid";
+    case "moduleNameRequired":
+      return "INFO: Please specify the module name";
+
+    case "foundModule": {
+      const moduleMessage = (() => {
+        switch (type.moduleCount) {
+          case undefined:
+            throw new Error("Number of modules is unknown.");
+          case 0:
+            return "INFO: No modules are found";
+          case 1:
+            return `\nTotal: ${type.moduleCount} module is found`;
+          default:
+            return `\nTotal: ${type.moduleCount} modules are found`;
+        }
+      })();
+
+      switch (type.fileCount) {
+        case undefined:
+          return moduleMessage;
+        case 1:
+          return `${moduleMessage} (${type.fileCount} file)`;
+        default:
+          return `${moduleMessage} (${type.fileCount} files)`;
+      }
+    }
+
+    case "foundFile":
+      switch (type.fileCount) {
+        case undefined:
+          throw new Error("Number of files is unknown.");
+        case 0:
+          return "INFO: No files are found";
+        case 1:
+          return `\nTotal: ${type.fileCount} file is found`;
+        default:
+          return `\nTotal: ${type.fileCount} files are found`;
+      }
+
+    case "deletedFile":
+      if (type.filePath === undefined) {
+        throw new Error("Deleted file is unknown.");
+      }
+      return `DELETED: ${type.filePath}`;
+
+    default:
+      throw new Error(`Given type is invalid. type: ${JSON.stringify(type)}`);
+  }
+}
+
+/**
+ * Display confirmation message on the terminal.
+ * @param {ConfirmationType} type
+ * @param {boolean} [skip=false]
+ * @returns {boolean} Whether the user's answer is "y" or not
+ */
 function displayConfirmationMessage(type, skip = false) {
   if (skip) return true;
 
-  const message = (() => {
-    switch (type.name) {
-      case "delete":
-        if (type.fileCount === 1) {
-          return "\nThis operation cannot be undone.\n" +
-            `Are you sure you want to delete the above ${type.fileCount} file? (y/N): `;
-        } else {
-          return "\nThis operation cannot be undone.\n" +
-            `Are you sure you want to delete the above ${type.fileCount} files? (y/N): `;
-        }
-      case "longTime":
-        return "It may take a very long time. Are you sure you want to start the process? (y/N): ";
-      default:
-        return undefined;
-    }
-  })();
-
-  if (message === undefined) return false;
-
+  const message = generateMessage(type);
   Deno.stdout.writeSync(new TextEncoder().encode(message));
 
   const buf = new Uint8Array(1024);
@@ -667,54 +758,14 @@ function displayConfirmationMessage(type, skip = false) {
   return input.toLowerCase() === "y";
 }
 
+/**
+ * Display result message on the terminal.
+ * @param {ResultType} type
+ */
 function displayResultMessage(type) {
   if (quietMode) return;
-
-  const message = (() => {
-    switch (type.name) {
-      case "version":
-        return `Deno module cache manager ${type.version}`;
-      case "versionError":
-        return `INFO: Deno version ${type.version} or later is required`;
-      case "invalidDate":
-        return "INFO: The specified date is invalid";
-      case "moduleNameRequired":
-        return "INFO: Please specify the module name";
-      case "foundNoModule":
-        return "INFO: No modules are found";
-      case "foundModule": {
-        const moduleMessage = (() => {
-          if (type.moduleCount === 1) {
-            return `\nTotal: ${type.moduleCount} module is found`;
-          } else {
-            return `\nTotal: ${type.moduleCount} modules are found`;
-          }
-        })();
-
-        if (type.fileCount === undefined) return moduleMessage;
-
-        if (type.fileCount === 1) {
-          return `${moduleMessage} (${type.fileCount} file)`;
-        } else {
-          return `${moduleMessage} (${type.fileCount} files)`;
-        }
-      }
-      case "foundNoFile":
-        return "INFO: No files are found";
-      case "foundFile":
-        if (type.fileCount === 1) {
-          return `\nTotal: ${type.fileCount} file is found`;
-        } else {
-          return `\nTotal: ${type.fileCount} files are found`;
-        }
-      case "deleteFile":
-        return `DELETED: ${type.filePath}`;
-      default:
-        return undefined;
-    }
-  })();
-
-  if (message) console.log(message);
+  const message = generateMessage(type);
+  console.log(message);
 }
 
 function displaySearchCriteria(option, target) {
@@ -958,14 +1009,8 @@ async function main() {
   if (optionFlags.missingUrl) {
     const filePathList = collectPathOfFileWithMissingURL();
     const fileCount = filePathList.length;
-
-    if (fileCount === 0) {
-      displayResultMessage({ name: "foundNoFile" });
-    } else {
-      filePathList.forEach((path) => console.log(path));
-      displayResultMessage({ name: "foundFile", fileCount });
-    }
-
+    filePathList.forEach((path) => console.log(path));
+    displayResultMessage({ name: "foundFile", fileCount });
     displaySearchCriteria(optionFlags, {});
     displaySearchLocation();
     Deno.exit();
@@ -994,9 +1039,9 @@ async function main() {
 
   const moduleCount = moduleData.targetedUrlListLength;
 
-  // Output no module error
+  // Output found-no-modules message
   if (moduleCount === 0) {
-    displayResultMessage({ name: "foundNoModule" });
+    displayResultMessage({ name: "foundModule", moduleCount });
     displaySearchCriteria(optionFlags, target);
     displaySearchLocation();
     Deno.exit();
