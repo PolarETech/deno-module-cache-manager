@@ -97,7 +97,7 @@ class ModuleData {
         };
 
         if (this.data[url].target === false) continue;
-        if (target.newer === undefined && target.older === undefined) continue;
+        if ((target.newer ?? target.older ?? false) === false) continue;
 
         if (this.data[url].date === undefined) {
           this.data[url].target = false;
@@ -647,8 +647,9 @@ function displayProgress(current, total, suffix = "done") {
  * @typedef {(
  *  |{ name: "version", version: string }
  *  |{ name: "versionError", version: string }
- *  |{ name: "invalidDate" }
- *  |{ name: "moduleNameRequired" }
+ *  |{ name: "invalidDate", option: ("newer"|"older") }
+ *  |{ name: "dateRequired", option: ("newer"|"older") }
+ *  |{ name: "moduleUrlRequired" }
  *  |{ name: "foundModule", moduleCount: number, fileCount?: number }
  *  |{ name: "foundFile", fileCount: number }
  *  |{ name: "deletedFile", filePath: string }
@@ -688,9 +689,11 @@ function generateMessage(type) {
     case "versionError":
       return `INFO: Deno version ${type.version} or later is required`;
     case "invalidDate":
-      return "INFO: The specified date is invalid";
-    case "moduleNameRequired":
-      return "INFO: Please specify the module name";
+      return `INFO: The specified ${type.option} date is invalid`;
+    case "dateRequired":
+      return `INFO: Please specify the ${type.option} date`;
+    case "moduleUrlRequired":
+      return "INFO: Please specify the module url";
 
     case "foundModule": {
       const moduleMessage = (() => {
@@ -878,8 +881,11 @@ function sortOutArgs(args) {
   };
 
   const invalidArgs = {
-    url: false,
-    date: false,
+    noUrl: false,
+    noNewer: false,
+    noOlder: false,
+    invalidNewer: false,
+    invalidOlder: false,
   };
 
   if (args.length === 0) {
@@ -950,11 +956,11 @@ function sortOutArgs(args) {
     // https://github.com/denoland/deno/issues/8627
     switch (key) {
       case "newer": {
-        target.newer ?? (target.newer = formatDateString(arg));
+        target.newer ?? (target.newer = formatDateString(arg) ?? null);
         break;
       }
       case "older": {
-        target.older ?? (target.older = formatDateString(arg));
+        target.older ?? (target.older = formatDateString(arg) ?? null);
         break;
       }
       case "delete":
@@ -972,9 +978,11 @@ function sortOutArgs(args) {
 
   flags.verbose = flags.quiet ? false : flags.verbose; // Priority: quiet > verbose
 
-  invalidArgs.url = (flags.name || flags.delete) && target.url === undefined;
-  invalidArgs.date = (flags.newer && target.newer === undefined) ||
-    (flags.older && target.older === undefined);
+  invalidArgs.noUrl = (flags.name || flags.delete) && target.url === undefined;
+  invalidArgs.noNewer = flags.newer && target.newer === undefined;
+  invalidArgs.noOlder = flags.older && target.older === undefined;
+  invalidArgs.invalidNewer = flags.newer && target.newer === null;
+  invalidArgs.invalidOlder = flags.older && target.older === null;
 
   return { optionFlags: flags, target, invalidArgs };
 }
@@ -1016,10 +1024,13 @@ async function main() {
     Deno.exit();
   }
 
-  // Output invalid argument error
-  if (invalidArgs.url || invalidArgs.date) {
-    if (invalidArgs.url) displayResultMessage({ name: "moduleNameRequired" });
-    if (invalidArgs.date) displayResultMessage({ name: "invalidDate" });
+  // Output invalid argument errors
+  if (Object.values(invalidArgs).includes(true)) {
+    if (invalidArgs.noUrl) displayResultMessage({ name: "moduleUrlRequired" });
+    if (invalidArgs.noNewer) displayResultMessage({ name: "dateRequired", option: "newer" });
+    if (invalidArgs.noOlder) displayResultMessage({ name: "dateRequired", option: "older" });
+    if (invalidArgs.invalidNewer) displayResultMessage({ name: "invalidDate", option: "newer" });
+    if (invalidArgs.invalidOlder) displayResultMessage({ name: "invalidDate", option: "older" });
     Deno.exit();
   }
 
