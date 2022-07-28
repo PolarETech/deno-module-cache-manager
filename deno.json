@@ -1,0 +1,24 @@
+{
+  "lint": {
+    "files": {
+      "include": ["src/"]
+    },
+    "rules": {
+      "tags": ["recommended"],
+      "include": ["camelcase"]
+    }
+  },
+  "fmt": {
+    "files": {
+      "include": ["src/"]
+    },
+    "options": {
+      "lineWidth": 200
+    }
+  },
+  "tasks": {
+    "bundle": "deno bundle src/main.ts bundle/cli.js",
+    "fmt": "deno fmt --ignore=src/help.ts --options-line-width 100",
+    "fmt:help": "deno fmt src/help.ts --options-line-width 200"
+  }
+}
