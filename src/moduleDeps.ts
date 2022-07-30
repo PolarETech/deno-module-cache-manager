@@ -88,7 +88,7 @@ export async function obtainDepsData(
         }),
     );
 
-    collectedData[url] = new Set(depsUrlList);
+    collectedData[url] = depsUrlList;
 
     semaphore.release();
 
