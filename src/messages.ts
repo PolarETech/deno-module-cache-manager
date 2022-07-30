@@ -176,9 +176,15 @@ export function displayCursor(show = true): void {
   // cursor display control only be performed in Deno v1.19.0 or later.
   // https://github.com/denoland/deno/pull/13438
   //
+  // (Deno v1.20.1)
   // Handling OS signals is currently not available on Windows.
   // Therefore, Windows is also excluded.
   // https://deno.land/manual@v1.20.1/examples/os_signals
+  //
+  // (Deno v1.23.0)
+  // Windows only supports listening for SIGINT and SIGBREAK as of Deno v1.23.
+  // Continue to exclude this process in Windows.
+  // https://deno.land/manual@v1.23.0/examples/os_signals
   if (checkDenoVersion("1.19.0") === false) return;
   if (Deno.build.os === "windows") return;
 
@@ -199,6 +205,12 @@ export function displayCursor(show = true): void {
     showCursor();
     Deno.removeSignalListener("SIGINT", showCursor);
     Deno.removeSignalListener("SIGTERM", showCursor);
+
+    // NOTE:
+    // The default behavior of the signal never restored.
+    // https://github.com/denoland/deno/issues/7164
+    Deno.addSignalListener("SIGINT", () => Deno.exit(1));
+    Deno.addSignalListener("SIGTERM", () => Deno.exit(1));
   } else {
     hideCursor();
     Deno.addSignalListener("SIGINT", showCursor);

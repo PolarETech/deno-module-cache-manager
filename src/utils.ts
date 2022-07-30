@@ -1,5 +1,7 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
+import { checkDenoVersion } from "./version.ts";
+
 export class Semaphore {
   counter: number;
   queue: (() => void)[];
@@ -83,6 +85,69 @@ export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
   return metadata;
 }
 
+export async function fetchJsonFile(url: string, timeout = 45000): Promise<unknown> {
+  try {
+    const res = await (async () => {
+      // NOTE:
+      // Before Deno v1.11.0, aborting fetch requests was not supported.
+      // https://github.com/denoland/deno/issues/7019
+      //
+      // Since Deno v1.20.1, AbortSignal.timeout() has been supported.
+      // However, we do not add implementations for v1.20.1 or later at this time
+      // to avoid complicating the code.
+      if (checkDenoVersion("1.11.0")) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+
+        const res = await fetch(url, {
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+        return res;
+      } else {
+        return await fetch(url);
+      }
+    })();
+
+    if (res.ok === false) {
+      throw new Error(
+        "Failed to fetch\n" +
+          `Response Status: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    return await res.json();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      const error = new Error("Fetch request has timed out");
+      error.name = "TimeoutError";
+      throw error;
+    } else if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
+      const error = new Error("The specified resource is not a JSON file");
+      error.name = "TypeError";
+      throw error;
+    } else {
+      throw e;
+    }
+  }
+}
+
+export function readJsonFile(path: string): unknown {
+  try {
+    const text = Deno.readTextFileSync(path);
+    return JSON.parse(text);
+  } catch (e) {
+    if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
+      const error = new Error("The specified resource is not a JSON file");
+      error.name = "TypeError";
+      throw error;
+    } else {
+      throw e;
+    }
+  }
+}
+
 export function isFileExist(path: string): boolean {
   try {
     return Deno.lstatSync(path).isFile;
@@ -94,6 +159,15 @@ export function isFileExist(path: string): boolean {
 export function isDirectoryExist(path: string): boolean {
   try {
     return Deno.lstatSync(path).isDirectory;
+  } catch (_e) {
+    return false;
+  }
+}
+
+export function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
   } catch (_e) {
     return false;
   }

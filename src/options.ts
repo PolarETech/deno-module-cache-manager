@@ -24,6 +24,7 @@ export type Target = {
   url?: string;
   newer?: string | null;
   older?: string | null;
+  importMap?: Set<string>;
 };
 
 type InvalidArgs = {
@@ -39,6 +40,7 @@ type AvailableFlags = {
   "-d": string;
   "--help": string;
   "-h": string;
+  "--import-map": string;
   "--leaves": string;
   "--missing-url": string;
   "--name": string;
@@ -87,6 +89,7 @@ export function sortOutArgs(args: string[]): {
     url: undefined,
     newer: undefined,
     older: undefined,
+    importMap: undefined,
   };
 
   const invalidArgs: InvalidArgs = {
@@ -106,6 +109,7 @@ export function sortOutArgs(args: string[]): {
     "-d": "delete",
     "--help": "help",
     "-h": "help",
+    "--import-map": "importMap",
     "--leaves": "leaves",
     "--missing-url": "missingUrl",
     "--name": "name",
@@ -175,10 +179,16 @@ export function sortOutArgs(args: string[]): {
       case "delete":
         target.url = arg;
         break;
+      case "importMap":
+        target.importMap ?? (target.importMap = new Set());
+        target.importMap.add(arg);
+        break;
       default:
         target.url ?? (target.url = arg);
     }
 
+    // --import-map allows multiple URLs to be specified in succession.
+    if (key === "importMap") continue;
     key = "";
   }
 

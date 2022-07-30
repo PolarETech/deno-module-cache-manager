@@ -108,7 +108,7 @@ if (optionFlags.leaves || optionFlags.uses) {
 const moduleData = new ModuleData();
 moduleData.collectModule(baseDepsPath, target);
 
-if (optionFlags.leaves) await moduleData.extractLeavesModule();
+if (optionFlags.leaves) await moduleData.extractLeavesModule(target.importMap);
 
 const moduleCount = moduleData.targetedUrlListLength;
 
@@ -122,7 +122,7 @@ if (moduleCount === 0) {
 
 // Collect additional information on cached modules
 if (optionFlags.withPath) moduleData.collectRelatedFilePath();
-if (optionFlags.uses) await moduleData.collectUsesModule();
+if (optionFlags.uses) await moduleData.collectUsesModule(target.importMap);
 
 // Process for delete option
 if (optionFlags.delete) {

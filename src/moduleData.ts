@@ -10,7 +10,12 @@ import {
 
 import { Target } from "./options.ts";
 import { buildBaseFilePath } from "./location.ts";
-import { obtainDepsData } from "./moduleDeps.ts";
+
+import {
+  obtainDepsData,
+  obtainDepsDataFromCachedImportMap,
+  obtainDepsDataFromRemoteImportMap,
+} from "./moduleDeps.ts";
 
 type CachedModuleData = {
   [key: string]: {
@@ -71,6 +76,12 @@ export class ModuleData {
         object[v] = this.data[v].types ?? "";
         return object;
       }, {});
+  }
+
+  get cachedJsonFileUrlAndHashList(): { url: string; hash: string }[] {
+    return this.allUrlList
+      .filter((v) => v.endsWith(".json"))
+      .map((v) => ({ url: v, hash: this.data[v].hash }));
   }
 
   date(url: string): string | undefined {
@@ -175,18 +186,34 @@ export class ModuleData {
     }
   }
 
-  async collectUsesModule(): Promise<void> {
+  async collectUsesModule(
+    importMapUrlList: Set<string> = new Set(),
+  ): Promise<void> {
+    const cachedJsonFileList = this.cachedJsonFileUrlAndHashList; // candidate import map files
+    const mapDeps1 = obtainDepsDataFromCachedImportMap(cachedJsonFileList);
+    const mapDeps2 = await obtainDepsDataFromRemoteImportMap(importMapUrlList);
+    const importMapData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
+
     const deps1 = await obtainDepsData(this.allUrlList);
     const deps2 = this.typesDataSpecifiedInHeader;
     const usesData = switchObjectKeyAndValue(mergeObject(deps1, deps2));
 
     for (const url of this.targetedUrlList) {
       this.data[url].uses = usesData[url] ? [...usesData[url]] : [];
+
+      // Reflect import maps
+      const applicableImportMapData: Set<string> = new Set();
+      for (const importMapUrl of Object.keys(importMapData)) {
+        if (url.startsWith(importMapUrl)) {
+          importMapData[importMapUrl].forEach((v) => applicableImportMapData.add(v));
+        }
+      }
+      this.data[url].uses = this.data[url].uses!.concat(...applicableImportMapData);
     }
   }
 
-  async extractLeavesModule(): Promise<void> {
-    await this.collectUsesModule();
+  async extractLeavesModule(importMapUrlList?: Set<string>): Promise<void> {
+    await this.collectUsesModule(importMapUrlList);
     for (const url of this.targetedUrlList) {
       if (this.data[url].uses?.length ?? 0 > 0) {
         this.data[url].target = false;

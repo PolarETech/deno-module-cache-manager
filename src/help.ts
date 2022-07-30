@@ -14,6 +14,8 @@ export function displayHelp(): void {
       `${t}                              ${t}Perform a substring search for MODULE_URL\n` +
       `${t}                              ${t}and files related to the matched module URLs are objects of deletion\n` +
       `${t}-h, --help                    ${t}Print help information\n` +
+      `${t}    --import-map <URL>        ${t}Load import map\n` +
+      `${t}                              ${t}One or more URLs or file paths can be specified\n` +
       `${t}    --leaves                  ${t}Print cached module URLs that are not dependencies of another cached module\n` +
       `${t}    --missing-url             ${t}Print cached module file paths whose URLs are missing\n` +
       `${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs\n` +
