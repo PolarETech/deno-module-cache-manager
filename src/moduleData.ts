@@ -22,6 +22,7 @@ type CachedModuleData = {
     hash: string;
     target: boolean;
     date?: string;
+    location?: string;
     types?: string;
     relatedFilePath?: string[];
     uses?: string[];
@@ -67,6 +68,15 @@ export class ModuleData {
   get relatedFilePathListLength(): number {
     return this.targetedUrlList
       .reduce((v1, v2) => v1 + (this.data[v2].relatedFilePath?.length ?? 0), 0);
+  }
+
+  get locationDataSpecifiedInHeader(): { [key: string]: string } {
+    return this.allUrlList
+      .filter((v) => this.data[v].location)
+      .reduce((object: { [key: string]: string }, v) => {
+        object[v] = this.data[v].location ?? "";
+        return object;
+      }, {});
   }
 
   get typesDataSpecifiedInHeader(): { [key: string]: string } {
@@ -116,6 +126,7 @@ export class ModuleData {
           hash: dirEntry.name.replace(".metadata.json", ""),
           target: target.url === undefined || url.includes(target.url),
           date: metadata.date,
+          location: metadata.location,
           types: metadata.types,
         };
 
@@ -195,8 +206,10 @@ export class ModuleData {
     const importMapData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
 
     const deps1 = await obtainDepsData(this.allUrlList);
-    const deps2 = this.typesDataSpecifiedInHeader;
-    const usesData = switchObjectKeyAndValue(mergeObject(deps1, deps2));
+    const deps2 = this.locationDataSpecifiedInHeader;
+    const deps3 = this.typesDataSpecifiedInHeader;
+    const mergedDeps = mergeObject(deps1, mergeObject(deps2, deps3));
+    const usesData = switchObjectKeyAndValue(mergedDeps);
 
     for (const url of this.targetedUrlList) {
       this.data[url].uses = usesData[url] ? [...usesData[url]] : [];

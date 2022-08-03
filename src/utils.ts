@@ -38,6 +38,7 @@ export class Semaphore {
 type Metadata = {
   url?: string;
   date?: string;
+  location?: string;
   types?: string;
 };
 
@@ -68,6 +69,20 @@ export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
     }
     try {
       return new Date(jsonData.headers.date).toISOString();
+    } catch (_e) {
+      return undefined;
+    }
+  })();
+
+  metadata.location = (() => {
+    if (jsonData.headers?.location === undefined) return undefined;
+
+    const location = jsonData.headers.location;
+    if (isValidUrl(location)) return location;
+
+    try {
+      const url = new URL(jsonData.url);
+      return `${url.origin}${location}`;
     } catch (_e) {
       return undefined;
     }
