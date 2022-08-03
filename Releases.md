@@ -1,5 +1,20 @@
 # Releases
 
+### 0.4.0 / 2022.08.03
+
+- feat: enable this script to be run directly in environments where the deno path is not set
+- feat: subdivide output of argument errors
+- feat: support import maps (--import-map option)
+- feat: consider the location header for uses and leaves options
+- fix: priority when multiple newer or older options are specified
+- fix: handling of x-typescript-types header value specified with a relative path
+- refactor: tidy up some codes
+- refactor: improve error handling in ModuleData class
+- refactor: separate message strings from display message functions
+- refactor: migrate from JavaScript to TypeScript
+- refactor: correct typos and update comments about cache file extensions
+- refactor: remove unnecessary code
+
 ### 0.3.0 / 2022.06.03
 
 - feat: search by module download date and time (--newer and --older options)
