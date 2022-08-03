@@ -90,9 +90,15 @@ export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
 
   // URL of .d.ts file specified in x-typescript-types header
   metadata.types = (() => {
-    if (/javascript|jsx/.test(jsonData.headers?.["content-type"])) {
-      return jsonData.headers?.["x-typescript-types"];
-    } else {
+    if (jsonData.headers?.["x-typescript-types"] === undefined) return undefined;
+
+    const types = jsonData.headers["x-typescript-types"];
+    if (isValidUrl(types)) return types;
+
+    try {
+      const url = new URL(jsonData.url);
+      return `${url.origin}${types}`;
+    } catch (_e) {
       return undefined;
     }
   })();
