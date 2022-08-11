@@ -1,6 +1,7 @@
 .DS_Store
 !.gitkeep
 _private-note/
+bundle/
 
 # Editor directories and files
 .idea

@@ -8,28 +8,13 @@ import { isDirectoryExist, isFileExist } from "./utils.ts";
 // created by Deno v1.2.2 or earlier, whose file names are not hashed.
 // If it eventually becomes necessary, its implementation should be considered separately.
 // https://github.com/denoland/deno/pull/6911
-function collectAllHashedFilePath(type = ""): string[] {
-  const baseDirList = (() => {
-    switch (type) {
-      case "modulesCache":
-        return [
-          `${baseDepsPath}/https`,
-          `${baseDepsPath}/http`,
-        ];
-      case "typescriptCache":
-        return [
-          `${baseGenPath}/https`,
-          `${baseGenPath}/http`,
-        ];
-      default:
-        return [
-          `${baseDepsPath}/https`,
-          `${baseDepsPath}/http`,
-          `${baseGenPath}/https`,
-          `${baseGenPath}/http`,
-        ];
-    }
-  })();
+function collectAllHashedFilePath(): string[] {
+  const baseDirList = [
+    `${baseDepsPath}/https`,
+    `${baseDepsPath}/http`,
+    `${baseGenPath}/https`,
+    `${baseGenPath}/http`,
+  ];
 
   const hostDirList: string[] = [];
   for (const baseDir of baseDirList) {

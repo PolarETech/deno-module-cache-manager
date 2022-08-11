@@ -48,7 +48,7 @@ export function buildBaseFilePath(
   url: string,
   hash: string,
 ): BaseFilePath {
-  const parsedUrl = new URL("", url);
+  const parsedUrl = new URL(url);
 
   const protocolDirName = parsedUrl.protocol.slice(0, -1); // remove trailing letter ":"
   const portString = parsedUrl.port ? `_PORT${parsedUrl.port}` : "";

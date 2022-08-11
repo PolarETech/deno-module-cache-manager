@@ -258,15 +258,17 @@ Deno.test({
   fn() {
     const o1 = { "a": new Set(["v-a11", "v-a12"]), "b": "v-b11" };
     const o2 = { "a": "v-a21", "c": new Set(["v-c21", "v-c22"]) };
-    const actual = mergeObject(o1, o2);
+    const o3 = { "a": new Set(["v-a21", "v-a31"]), "b": "v-b11" };
+    const actual = mergeObject(o1, o2, o3);
 
     assertEquals(Object.keys(actual).length, 3);
-    assertEquals(actual["a"].size, 3);
+    assertEquals(actual["a"].size, 4);
     assertEquals(actual["b"].size, 1);
     assertEquals(actual["c"].size, 2);
     assertEquals(actual["a"].has("v-a11"), true);
     assertEquals(actual["a"].has("v-a12"), true);
     assertEquals(actual["a"].has("v-a21"), true);
+    assertEquals(actual["a"].has("v-a31"), true);
     assertEquals(actual["b"].has("v-b11"), true);
     assertEquals(actual["c"].has("v-c21"), true);
     assertEquals(actual["c"].has("v-c22"), true);
@@ -274,22 +276,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "switch object key and value #1 - string",
-  fn() {
-    const o = { "k1": "v1", "k2": "v2", "k3": "v2" };
-    const actual = switchObjectKeyAndValue(o);
-
-    assertEquals(Object.keys(actual).length, 2);
-    assertEquals(actual["v1"].size, 1);
-    assertEquals(actual["v2"].size, 2);
-    assertEquals(actual["v1"].has("k1"), true);
-    assertEquals(actual["v2"].has("k2"), true);
-    assertEquals(actual["v2"].has("k3"), true);
-  },
-});
-
-Deno.test({
-  name: "switch object key and value #2 - Set",
+  name: "switch object key and value #1",
   fn() {
     const o = { "k1": new Set(["v1", "v2"]), "k2": new Set(["v2", "v3"]) };
     const actual = switchObjectKeyAndValue(o);
@@ -302,22 +289,5 @@ Deno.test({
     assertEquals(actual["v2"].has("k1"), true);
     assertEquals(actual["v2"].has("k2"), true);
     assertEquals(actual["v3"].has("k2"), true);
-  },
-});
-
-Deno.test({
-  name: "switch object key and value #3 - mixed",
-  fn() {
-    const o = { "k1": new Set(["v1", "v2"]), "k2": "v2", "k3": "v3" };
-    const actual = switchObjectKeyAndValue(o);
-
-    assertEquals(Object.keys(actual).length, 3);
-    assertEquals(actual["v1"].size, 1);
-    assertEquals(actual["v2"].size, 2);
-    assertEquals(actual["v3"].size, 1);
-    assertEquals(actual["v1"].has("k1"), true);
-    assertEquals(actual["v2"].has("k1"), true);
-    assertEquals(actual["v2"].has("k2"), true);
-    assertEquals(actual["v3"].has("k3"), true);
   },
 });

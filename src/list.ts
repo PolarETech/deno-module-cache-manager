@@ -27,9 +27,8 @@ export function displayCachedModuleList(
       if (optionFlags.withDate) {
         const padding = " ".repeat(maxUrlLength - url.length + 2);
         return padding + (moduleData.date(url) ?? "Unknown");
-      } else {
-        return "";
       }
+      return "";
     })();
 
     console.log(urlString + dateString);
@@ -46,9 +45,7 @@ export function displayCachedModuleList(
         }
       })();
 
-      for (const value of list) {
-        console.log(` - ${value}`);
-      }
+      list.forEach((v) => console.log(` - ${v}`));
     }
   }
 }

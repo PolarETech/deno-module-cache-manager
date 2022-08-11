@@ -2,7 +2,7 @@
 
 import { baseDepsPath, baseGenPath, quietMode, verboseMode } from "./main.ts";
 import { checkDenoVersion } from "./version.ts";
-import { OptionFlags, Target } from "./options.ts";
+import { InvalidArgs, OptionFlags, Target } from "./options.ts";
 
 export enum ConfirmationId {
   Delete = "delete",
@@ -10,8 +10,8 @@ export enum ConfirmationId {
 }
 
 type ConfirmationType =
-  | { name: ConfirmationId.Delete; fileCount: number }
-  | { name: ConfirmationId.LongTime };
+  | { id: ConfirmationId.Delete; fileCount: number }
+  | { id: ConfirmationId.LongTime };
 
 export enum ResultId {
   Version = "version",
@@ -25,17 +25,17 @@ export enum ResultId {
 }
 
 type ResultType =
-  | { name: ResultId.Version; version: string }
-  | { name: ResultId.VersionError; version: string }
-  | { name: ResultId.InvalidDate; option: "newer" | "older" }
-  | { name: ResultId.DateRequired; option: "newer" | "older" }
-  | { name: ResultId.ModuleUrlRequired }
-  | { name: ResultId.FoundModule; moduleCount: number; fileCount?: number }
-  | { name: ResultId.FoundFile; fileCount: number }
-  | { name: ResultId.DeletedFile; filePath: string };
+  | { id: ResultId.Version; version: string }
+  | { id: ResultId.VersionError; version: string }
+  | { id: ResultId.InvalidDate; option: "newer" | "older" }
+  | { id: ResultId.DateRequired; option: "newer" | "older" }
+  | { id: ResultId.ModuleUrlRequired }
+  | { id: ResultId.FoundModule; moduleCount: number; fileCount?: number }
+  | { id: ResultId.FoundFile; fileCount: number }
+  | { id: ResultId.DeletedFile; filePath: string };
 
 function generateMessage(type: ConfirmationType | ResultType): string {
-  switch (type.name) {
+  switch (type.id) {
     /*
      * Confirmation messages
      */
@@ -130,36 +130,53 @@ export function displayResultMessage(type: ResultType): void {
   console.log(message);
 }
 
-export function displaySearchCriteria(option: OptionFlags, target: Target): void {
+export function displayInvalidArgsMessage(invalidArgs: InvalidArgs): void {
+  invalidArgs.noUrl &&
+    displayResultMessage({
+      id: ResultId.ModuleUrlRequired,
+    });
+
+  invalidArgs.noNewer &&
+    displayResultMessage({
+      id: ResultId.DateRequired,
+      option: "newer",
+    });
+
+  invalidArgs.noOlder &&
+    displayResultMessage({
+      id: ResultId.DateRequired,
+      option: "older",
+    });
+
+  invalidArgs.invalidNewer &&
+    displayResultMessage({
+      id: ResultId.InvalidDate,
+      option: "newer",
+    });
+
+  invalidArgs.invalidOlder &&
+    displayResultMessage({
+      id: ResultId.InvalidDate,
+      option: "older",
+    });
+}
+
+export function displaySearchCriteria(
+  option: OptionFlags,
+  target: Target,
+): void {
   if (verboseMode === false) return;
 
-  let message = "";
+  const criteria = (
+    (option.missingUrl ? ` - Search with option "--missing-url"\n` : "") +
+    (option.leaves ? ` - Search with option "--leaves"\n` : "") +
+    (option.uses ? ` - Search with option "--uses"\n` : "") +
+    (target.url ? ` - Module URL contains "${target.url}"\n` : "") +
+    (target.newer ? ` - Download date is equal to or newer than "${target.newer}"\n` : "") +
+    (target.older ? ` - Download date is equal to or older than "${target.older}"\n` : "")
+  ) || " - All cached modules\n";
 
-  if (option.missingUrl) {
-    message += ` - Search with option "--missing-url"\n`;
-  }
-  if (option.leaves) {
-    message += ` - Search with option "--leaves"\n`;
-  }
-  if (option.uses) {
-    message += ` - Search with option "--uses"\n`;
-  }
-
-  if (target.url) {
-    message += ` - Module URL contains "${target.url}"\n`;
-  }
-  if (target.newer) {
-    message += ` - Download date is equal to or newer than "${target.newer}"\n`;
-  }
-  if (target.older) {
-    message += ` - Download date is equal to or older than "${target.older}"\n`;
-  }
-
-  if (message === "") {
-    message = " - All cached modules\n";
-  }
-
-  message = `Search criteria:\n${message}`;
+  const message = `Search criteria:\n${criteria}`;
 
   Deno.stdout.writeSync(new TextEncoder().encode(message));
 }
@@ -228,9 +245,7 @@ export function displayProgress(
   const digits = String(total).length;
   const text = ` * ${String(current).padStart(digits, " ")} / ${total} ${suffix}`;
 
-  if (current === 0) {
-    displayCursor(false);
-  }
+  if (current === 0) displayCursor(false);
 
   Deno.stdout.writeSync(new TextEncoder().encode(`${text}\r`));
 

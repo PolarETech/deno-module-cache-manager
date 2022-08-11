@@ -38,7 +38,7 @@ async function obtainDenoInfo(url: string, execPath: string): Promise<string> {
   }
 }
 
-type DepsData = { [key: string]: Set<string> };
+type DepsData = Record<string, Set<string>>;
 
 // OPTIMIZE:
 // If the number of cached modules is large,
@@ -104,26 +104,24 @@ type ImportMap = {
   scopes?: Record<string, Record<string, string>>;
 };
 
-// TODO: Refactor
 // References: https://wicg.github.io/import-maps/
-function obtainUrlFromImportMapData(
+function extractUrlFromImportMapData(
   jsonData: ImportMap,
   ignoreError = false,
 ): Set<string> {
   const collectedList: Set<string> = new Set();
 
-  const isKeyValueObject = ((data: unknown) => {
-    return (
-      typeof data !== "object" ||
-      data === null ||
-      Array.isArray(data)
-    );
-  });
+  const isNotKeyValueObject = (data: unknown) => (
+    typeof data !== "object" ||
+    data === null ||
+    Array.isArray(data)
+  );
 
-  const _extractUrlInImports = (() => {
+  // extract url in imports
+  (() => {
     if (jsonData.imports === undefined) return;
 
-    if (isKeyValueObject(jsonData.imports)) {
+    if (isNotKeyValueObject(jsonData.imports)) {
       if (ignoreError) return;
       throw new TypeError(
         `The "imports" top-level key should be a JSON object\n` +
@@ -131,18 +129,17 @@ function obtainUrlFromImportMapData(
       );
     }
 
-    for (const v of Object.values(jsonData.imports)) {
-      if (typeof v === "string") {
-        // Omit key string validation
-        if (isValidUrl(v)) collectedList.add(v);
-      }
-    }
+    // Omit key string validation
+    Object.values(jsonData.imports)
+      .filter((v) => typeof v === "string" && isValidUrl(v))
+      .forEach(Set.prototype.add, collectedList);
   })();
 
-  const _extractUrlInScopes = (() => {
+  // extract url in scopes
+  (() => {
     if (jsonData.scopes === undefined) return;
 
-    if (isKeyValueObject(jsonData.scopes)) {
+    if (isNotKeyValueObject(jsonData.scopes)) {
       if (ignoreError) return;
       throw new TypeError(
         `The "scopes" top-level key should be a JSON object\n` +
@@ -151,7 +148,7 @@ function obtainUrlFromImportMapData(
     }
 
     for (const [prefix, map] of Object.entries(jsonData.scopes)) {
-      if (isKeyValueObject(map)) {
+      if (isNotKeyValueObject(map)) {
         if (ignoreError) continue;
         throw new TypeError(
           `The value of the scope should be a JSON object\n` +
@@ -160,38 +157,32 @@ function obtainUrlFromImportMapData(
         );
       }
 
-      for (const v of Object.values(map)) {
-        if (typeof v === "string") {
-          // Omit key string validation
-          if (isValidUrl(v)) collectedList.add(v);
-        }
-      }
+      // Omit key string validation
+      Object.values(map)
+        .filter((v) => typeof v === "string" && isValidUrl(v))
+        .forEach(Set.prototype.add, collectedList);
     }
   })();
 
   return collectedList;
 }
 
-export async function obtainDepsDataFromRemoteImportMap(
-  importMapUrlList: Set<string>,
+export async function obtainDepsDataFromSpecifiedImportMap(
+  importMapLocationList: Set<string>,
 ): Promise<DepsData> {
   const collectedData: DepsData = {};
 
-  for (const url of importMapUrlList) {
+  for (const loc of importMapLocationList) {
     try {
       const jsonData = await (async () => {
-        if (isValidUrl(url)) {
-          return await fetchJsonFile(url) as ImportMap;
-        }
-        if (isFileExist(url)) {
-          return readJsonFile(url) as ImportMap;
-        }
+        if (isValidUrl(loc)) return await fetchJsonFile(loc) as ImportMap;
+        if (isFileExist(loc)) return readJsonFile(loc) as ImportMap;
         throw new Error("The specified import map URL or path is invalid");
       })();
 
-      collectedData[url] = obtainUrlFromImportMapData(jsonData);
+      collectedData[loc] = extractUrlFromImportMapData(jsonData);
     } catch (e) {
-      console.error("Loading import map:", url);
+      console.error("Loading import map:", loc);
       console.error(e);
       Deno.exit(1);
     }
@@ -213,17 +204,12 @@ export function obtainDepsDataFromCachedImportMap(
     // JSON files that are not ｆor import maps may be cached.
     // Therefore, the process continues
     // even if there are invalid JSON files as import maps.
-    const jsonData: ImportMap | undefined = (() => {
-      try {
-        const text = Deno.readTextFileSync(importMapFilePath);
-        return JSON.parse(text);
-      } catch (_e) {
-        return undefined;
-      }
-    })();
-
-    if (jsonData === undefined) continue;
-    collectedData[file.url] = obtainUrlFromImportMapData(jsonData, true);
+    try {
+      const jsonData = readJsonFile(importMapFilePath) as ImportMap;
+      collectedData[file.url] = extractUrlFromImportMapData(jsonData, true);
+    } catch (_e) {
+      continue;
+    }
   }
 
   return collectedData;

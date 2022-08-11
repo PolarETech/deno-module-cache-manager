@@ -2,23 +2,51 @@
 
 import { formatDateString } from "./utils.ts";
 
-export type OptionFlags = {
-  delete: boolean;
-  help: boolean;
-  leaves: boolean;
-  missingUrl: boolean;
-  name: boolean;
-  newer: boolean;
-  older: boolean;
-  quiet: boolean;
-  skipConfirmation: boolean;
-  sortDate: boolean;
-  uses: boolean;
-  verbose: boolean;
-  version: boolean;
-  withDate: boolean;
-  withPath: boolean;
-};
+type AvailableFlagKeys =
+  | "--delete"
+  | "-d"
+  | "--help"
+  | "-h"
+  | "--import-map"
+  | "--leaves"
+  | "--missing-url"
+  | "--newer"
+  | "--older"
+  | "--quiet"
+  | "-q"
+  | "--sort-date"
+  | "--url"
+  | "--name"
+  | "-n"
+  | "--uses"
+  | "--verbose"
+  | "-v"
+  | "--version"
+  | "-V"
+  | "--with-date"
+  | "--with-path"
+  | "--yes"
+  | "-y";
+
+type OptionFlagKeys =
+  | "delete"
+  | "help"
+  | "importMap"
+  | "leaves"
+  | "missingUrl"
+  | "newer"
+  | "older"
+  | "quiet"
+  | "skipConfirmation"
+  | "sortDate"
+  | "url"
+  | "uses"
+  | "verbose"
+  | "version"
+  | "withDate"
+  | "withPath";
+
+export type OptionFlags = Record<OptionFlagKeys, boolean>;
 
 export type Target = {
   url?: string;
@@ -27,40 +55,14 @@ export type Target = {
   importMap?: Set<string>;
 };
 
-type InvalidArgs = {
-  noUrl: boolean;
-  noNewer: boolean;
-  noOlder: boolean;
-  invalidNewer: boolean;
-  invalidOlder: boolean;
-};
-
-type AvailableFlags = {
-  "--delete": string;
-  "-d": string;
-  "--help": string;
-  "-h": string;
-  "--import-map": string;
-  "--leaves": string;
-  "--missing-url": string;
-  "--name": string;
-  "-n": string;
-  "--url": string;
-  "--newer": string;
-  "--older": string;
-  "--quiet": string;
-  "-q": string;
-  "--sort-date": string;
-  "--uses": string;
-  "--verbose": string;
-  "-v": string;
-  "--version": string;
-  "-V": string;
-  "--with-date": string;
-  "--with-path": string;
-  "--yes": string;
-  "-y": string;
-};
+export type InvalidArgs = Record<
+  | "noUrl"
+  | "noNewer"
+  | "noOlder"
+  | "invalidNewer"
+  | "invalidOlder",
+  boolean
+>;
 
 export function sortOutArgs(args: string[]): {
   optionFlags: OptionFlags;
@@ -70,14 +72,15 @@ export function sortOutArgs(args: string[]): {
   const flags: OptionFlags = {
     delete: false,
     help: false,
+    importMap: false,
     leaves: false,
     missingUrl: false,
-    name: false,
     newer: false,
     older: false,
     quiet: false,
     skipConfirmation: false,
     sortDate: false,
+    url: false,
     uses: false,
     verbose: false,
     version: false,
@@ -104,7 +107,7 @@ export function sortOutArgs(args: string[]): {
     return { optionFlags: flags, target, invalidArgs };
   }
 
-  const availableFlags: AvailableFlags = {
+  const flagKeyTable: Record<AvailableFlagKeys, OptionFlagKeys> = {
     "--delete": "delete",
     "-d": "delete",
     "--help": "help",
@@ -112,9 +115,9 @@ export function sortOutArgs(args: string[]): {
     "--import-map": "importMap",
     "--leaves": "leaves",
     "--missing-url": "missingUrl",
-    "--name": "name",
-    "-n": "name",
-    "--url": "name",
+    "--name": "url",
+    "-n": "url",
+    "--url": "url",
     "--newer": "newer",
     "--older": "older",
     "--quiet": "quiet",
@@ -142,20 +145,20 @@ export function sortOutArgs(args: string[]): {
 
   let setExclusive = false;
 
-  let key = "";
+  let key: OptionFlagKeys = "url";
   for (const arg of args) {
-    if (availableFlags[arg as keyof AvailableFlags]) {
-      key = availableFlags[arg as keyof AvailableFlags];
+    if (flagKeyTable[arg as AvailableFlagKeys]) {
+      key = flagKeyTable[arg as AvailableFlagKeys];
 
       if (exclusiveFlags.has(key)) {
         if (setExclusive === false) {
-          flags[key as keyof OptionFlags] = true;
+          flags[key] = true;
           setExclusive = true;
         } else {
-          key = "";
+          key = "url";
         }
       } else {
-        flags[key as keyof OptionFlags] = true;
+        flags[key] = true;
       }
 
       continue;
@@ -168,14 +171,12 @@ export function sortOutArgs(args: string[]): {
     // ??= operator does not work properly on "deno run" before Deno v1.6.2
     // https://github.com/denoland/deno/issues/8627
     switch (key) {
-      case "newer": {
+      case "newer":
         target.newer ?? (target.newer = formatDateString(arg) ?? null);
         break;
-      }
-      case "older": {
+      case "older":
         target.older ?? (target.older = formatDateString(arg) ?? null);
         break;
-      }
       case "delete":
         target.url = arg;
         break;
@@ -189,15 +190,15 @@ export function sortOutArgs(args: string[]): {
 
     // --import-map allows multiple URLs to be specified in succession.
     if (key === "importMap") continue;
-    key = "";
+    key = "url";
   }
 
-  flags.withPath = flags.delete ? true : flags.withPath;
-  flags.withPath = flags.uses ? false : flags.withPath;
+  flags.delete && (flags.withPath = true);
+  flags.uses && (flags.withPath = false);
 
-  flags.verbose = flags.quiet ? false : flags.verbose; // Priority: quiet > verbose
+  flags.quiet && (flags.verbose = false); // Priority: quiet > verbose
 
-  invalidArgs.noUrl = (flags.name || flags.delete) && target.url === undefined;
+  invalidArgs.noUrl = (flags.url || flags.delete) && target.url === undefined;
   invalidArgs.noNewer = flags.newer && target.newer === undefined;
   invalidArgs.noOlder = flags.older && target.older === undefined;
   invalidArgs.invalidNewer = flags.newer && target.newer === null;

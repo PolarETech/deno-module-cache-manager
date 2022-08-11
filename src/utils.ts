@@ -43,8 +43,6 @@ type Metadata = {
 };
 
 export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
-  const metadata: Metadata = {};
-
   const jsonData = (() => {
     try {
       const text = Deno.readTextFileSync(metadataFilePath);
@@ -54,11 +52,11 @@ export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
     }
   })();
 
-  if (jsonData === undefined) return metadata;
+  if (jsonData === undefined) return {};
 
-  metadata.url = jsonData.url;
+  const url = jsonData.url;
 
-  metadata.date = (() => {
+  const date = (() => {
     try {
       // NOTE:
       // SystemTime is not stored in metadata created by Deno v1.16.4 or earlier
@@ -74,41 +72,32 @@ export function obtainValueFromMetadata(metadataFilePath: string): Metadata {
     }
   })();
 
-  metadata.location = (() => {
+  const location = (() => {
     if (jsonData.headers?.location === undefined) return undefined;
-
-    const location = jsonData.headers.location;
-    if (isValidUrl(location)) return location;
-
     try {
-      const url = new URL(jsonData.url);
-      return `${url.origin}${location}`;
+      return new URL(jsonData.headers.location, url).href;
     } catch (_e) {
       return undefined;
     }
   })();
 
   // URL of .d.ts file specified in x-typescript-types header
-  metadata.types = (() => {
+  const types = (() => {
     if (jsonData.headers?.["x-typescript-types"] === undefined) return undefined;
-
-    const types = jsonData.headers["x-typescript-types"];
-    if (isValidUrl(types)) return types;
-
     try {
-      const url = new URL(jsonData.url);
-      return `${url.origin}${types}`;
+      return new URL(jsonData.headers["x-typescript-types"], url).href;
     } catch (_e) {
       return undefined;
     }
   })();
 
-  return metadata;
+  return { url, date, location, types };
 }
 
 export async function fetchJsonFile(url: string, timeout = 45000): Promise<unknown> {
-  try {
-    const res = await (async () => {
+  const res = await (async () => {
+    let timer = 0;
+    try {
       // NOTE:
       // Before Deno v1.11.0, aborting fetch requests was not supported.
       // https://github.com/denoland/deno/issues/7019
@@ -116,56 +105,50 @@ export async function fetchJsonFile(url: string, timeout = 45000): Promise<unkno
       // Since Deno v1.20.1, AbortSignal.timeout() has been supported.
       // However, we do not add implementations for v1.20.1 or later at this time
       // to avoid complicating the code.
-      if (checkDenoVersion("1.11.0")) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
+      if (checkDenoVersion("1.11.0") === false) return await fetch(url);
 
-        const res = await fetch(url, {
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
-        return res;
-      } else {
-        return await fetch(url);
+      const controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), timeout);
+      return await fetch(url, { signal: controller.signal });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        const error = new Error("Fetch request has timed out");
+        error.name = "TimeoutError";
+        throw error;
       }
-    })();
-
-    if (res.ok === false) {
-      throw new Error(
-        "Failed to fetch\n" +
-          `Response Status: ${res.status} ${res.statusText}`,
-      );
+      throw e;
+    } finally {
+      timer && clearTimeout(timer);
     }
+  })();
 
-    return await res.json();
-  } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
-      const error = new Error("Fetch request has timed out");
-      error.name = "TimeoutError";
-      throw error;
-    } else if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
-      const error = new Error("The specified resource is not a JSON file");
+  if (res.ok) {
+    try {
+      return await res.json();
+    } catch (_e) {
+      const error = new Error("The specified resource is not a valid JSON file");
       error.name = "TypeError";
       throw error;
-    } else {
-      throw e;
     }
   }
+
+  res.body?.cancel();
+
+  throw new Error(
+    "Failed to fetch\n" +
+      `Response Status: ${res.status} ${res.statusText}`,
+  );
 }
 
 export function readJsonFile(path: string): unknown {
+  const text = Deno.readTextFileSync(path);
+
   try {
-    const text = Deno.readTextFileSync(path);
     return JSON.parse(text);
-  } catch (e) {
-    if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
-      const error = new Error("The specified resource is not a JSON file");
-      error.name = "TypeError";
-      throw error;
-    } else {
-      throw e;
-    }
+  } catch (_e) {
+    const error = new Error("The specified resource is not a valid JSON file");
+    error.name = "TypeError";
+    throw error;
   }
 }
 
@@ -227,25 +210,22 @@ export function formatDateString(dateString: string): string | undefined {
 }
 
 /**
- * Merge two objects.
- * @param obj1
- * @param obj2
- * @returns Object merging obj1 and obj2
+ * Merge multiple objects.
+ * @param objArray
+ * @returns Object merged from multiple objects
  */
 export function mergeObject(
-  obj1: { [key: string]: string | Set<string> },
-  obj2: { [key: string]: string | Set<string> },
-): { [key: string]: Set<string> } {
-  const mergedObj: { [key: string]: Set<string> } = {};
+  ...objArray: Record<string, string | Set<string>>[]
+): Record<string, Set<string>> {
+  const mergedObj: Record<string, Set<string>> = {};
 
-  for (const obj of [obj1, obj2]) {
+  for (const obj of objArray) {
     for (const [key, value] of Object.entries(obj)) {
-      if (mergedObj[key] === undefined) mergedObj[key] = new Set();
-
+      mergedObj[key] ?? (mergedObj[key] = new Set());
       if (typeof value === "string") {
         mergedObj[key].add(value);
       } else {
-        value.forEach(mergedObj[key].add, mergedObj[key]);
+        value.forEach(Set.prototype.add, mergedObj[key]);
       }
     }
   }
@@ -259,19 +239,14 @@ export function mergeObject(
  * @returns Switched object
  */
 export function switchObjectKeyAndValue(
-  obj: { [key: string]: string | Set<string> },
-): { [key: string]: Set<string> } {
-  const switchedObj: { [key: string]: Set<string> } = {};
+  obj: Record<string, Set<string>>,
+): Record<string, Set<string>> {
+  const switchedObj: Record<string, Set<string>> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string") {
-      if (switchedObj[value] === undefined) switchedObj[value] = new Set();
-      switchedObj[value].add(key);
-    } else {
-      for (const v of value) {
-        if (switchedObj[v] === undefined) switchedObj[v] = new Set();
-        switchedObj[v].add(key);
-      }
+    for (const v of value) {
+      switchedObj[v] ?? (switchedObj[v] = new Set());
+      switchedObj[v].add(key);
     }
   }
 

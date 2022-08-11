@@ -14,11 +14,11 @@ import { buildBaseFilePath } from "./location.ts";
 import {
   obtainDepsData,
   obtainDepsDataFromCachedImportMap,
-  obtainDepsDataFromRemoteImportMap,
+  obtainDepsDataFromSpecifiedImportMap,
 } from "./moduleDeps.ts";
 
 type CachedModuleData = {
-  [key: string]: {
+  [url: string]: {
     hash: string;
     target: boolean;
     date?: string;
@@ -37,7 +37,7 @@ export class ModuleData {
   }
 
   get targetedUrlList(): string[] {
-    return Object.keys(this.data).filter((v) => this.data[v].target);
+    return this.allUrlList.filter((v) => this.data[v].target);
   }
 
   get sortedUrlList(): string[] {
@@ -70,20 +70,20 @@ export class ModuleData {
       .reduce((v1, v2) => v1 + (this.data[v2].relatedFilePath?.length ?? 0), 0);
   }
 
-  get locationDataSpecifiedInHeader(): { [key: string]: string } {
+  get locationDataSpecifiedInHeader(): Record<string, string> {
     return this.allUrlList
       .filter((v) => this.data[v].location)
-      .reduce((object: { [key: string]: string }, v) => {
-        object[v] = this.data[v].location ?? "";
+      .reduce((object: Record<string, string>, v) => {
+        object[v] = this.data[v].location!;
         return object;
       }, {});
   }
 
-  get typesDataSpecifiedInHeader(): { [key: string]: string } {
+  get typesDataSpecifiedInHeader(): Record<string, string> {
     return this.allUrlList
       .filter((v) => this.data[v].types)
-      .reduce((object: { [key: string]: string }, v) => {
-        object[v] = this.data[v].types ?? "";
+      .reduce((object: Record<string, string>, v) => {
+        object[v] = this.data[v].types!;
         return object;
       }, {});
   }
@@ -180,55 +180,51 @@ export class ModuleData {
         genUrlPath,
       } = buildBaseFilePath(url, this.data[url].hash);
 
-      const pathList = [];
+      const depsPathList = extensionsInDeps
+        .map((ext) => depsHashedPath + ext);
 
-      for (const ext of extensionsInDeps) {
-        pathList.push(depsHashedPath + ext);
-      }
+      const genPathList = [genHashedPath, genUrlPath]
+        .flatMap((path) => extensionsInGen.map((ext) => path + ext));
 
-      for (const path of [genHashedPath, genUrlPath]) {
-        for (const ext of extensionsInGen) {
-          pathList.push(path + ext);
-        }
-      }
-
-      this.data[url].relatedFilePath = pathList
+      this.data[url].relatedFilePath = [...depsPathList, ...genPathList]
         .filter((path) => isFileExist(path));
     }
   }
 
   async collectUsesModule(
-    importMapUrlList: Set<string> = new Set(),
+    importMapLocationList?: Set<string>,
   ): Promise<void> {
     const cachedJsonFileList = this.cachedJsonFileUrlAndHashList; // candidate import map files
-    const mapDeps1 = obtainDepsDataFromCachedImportMap(cachedJsonFileList);
-    const mapDeps2 = await obtainDepsDataFromRemoteImportMap(importMapUrlList);
-    const importMapData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
+    const mapDeps1 = cachedJsonFileList.length
+      ? obtainDepsDataFromCachedImportMap(cachedJsonFileList)
+      : {};
+    const mapDeps2 = importMapLocationList
+      ? await obtainDepsDataFromSpecifiedImportMap(importMapLocationList)
+      : {};
+    const mapsData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
 
     const deps1 = await obtainDepsData(this.allUrlList);
     const deps2 = this.locationDataSpecifiedInHeader;
     const deps3 = this.typesDataSpecifiedInHeader;
-    const mergedDeps = mergeObject(deps1, mergeObject(deps2, deps3));
-    const usesData = switchObjectKeyAndValue(mergedDeps);
+    const usesData = switchObjectKeyAndValue(mergeObject(deps1, deps2, deps3));
 
     for (const url of this.targetedUrlList) {
-      this.data[url].uses = usesData[url] ? [...usesData[url]] : [];
+      const collectedDepsData: Set<string> = usesData[url] ?? new Set();
 
       // Reflect import maps
-      const applicableImportMapData: Set<string> = new Set();
-      for (const importMapUrl of Object.keys(importMapData)) {
-        if (url.startsWith(importMapUrl)) {
-          importMapData[importMapUrl].forEach((v) => applicableImportMapData.add(v));
+      for (const [key, value] of Object.entries(mapsData)) {
+        if (url.startsWith(key)) {
+          value.forEach(Set.prototype.add, collectedDepsData);
         }
       }
-      this.data[url].uses = this.data[url].uses!.concat(...applicableImportMapData);
+      this.data[url].uses = [...collectedDepsData];
     }
   }
 
-  async extractLeavesModule(importMapUrlList?: Set<string>): Promise<void> {
-    await this.collectUsesModule(importMapUrlList);
+  async extractLeavesModule(importMapLocationList?: Set<string>): Promise<void> {
+    await this.collectUsesModule(importMapLocationList);
     for (const url of this.targetedUrlList) {
-      if (this.data[url].uses?.length ?? 0 > 0) {
+      if (this.data[url].uses?.length) {
         this.data[url].target = false;
       }
     }
