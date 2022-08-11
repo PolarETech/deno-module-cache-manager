@@ -1,0 +1,12 @@
+{
+  "headers": {
+    "date": "Thu, 31 Mar 2022 23:09:14 GMT",
+    "location": "https://example.net/foo@1.0.0/bar.ts",
+    "x-typescript-types": "/foo@1.0.0/bar.d.ts"
+  },
+  "url": "https://example.com/foo/bar.ts",
+  "now": {
+    "secs_since_epoch": 1648732154,
+    "nanos_since_epoch": 300200100
+  }
+}

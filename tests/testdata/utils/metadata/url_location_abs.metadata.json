@@ -1,0 +1,6 @@
+{
+  "headers": {
+    "location": "https://example.net/foo@1.0.0/bar.ts"
+  },
+  "url": "https://example.com/foo/bar.ts"
+}

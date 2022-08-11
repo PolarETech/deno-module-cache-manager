@@ -1,0 +1,6 @@
+{
+  "headers": {
+    "x-typescript-types": "/foo@1.0.0/bar.d.ts"
+  },
+  "url": "https://example.com/foo/bar.ts"
+}

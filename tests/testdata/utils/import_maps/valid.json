@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "examples/": "https://deno.land/std/examples/"
+  },
+  "scopes": {
+    "/scope/": {
+      "welcome": "https://deno.land/std/examples/welcome.ts"
+    }
+  }
+}

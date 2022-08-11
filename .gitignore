@@ -2,6 +2,7 @@
 !.gitkeep
 _private-note/
 bundle/
+cov_profile/
 
 # Editor directories and files
 .idea
