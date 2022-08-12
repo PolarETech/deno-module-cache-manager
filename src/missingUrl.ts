@@ -1,6 +1,6 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-import { baseDepsPath, baseGenPath } from "./main.ts";
+import { location } from "./location.ts";
 import { isDirectoryExist, isFileExist } from "./utils.ts";
 
 // WARNING:
@@ -10,10 +10,10 @@ import { isDirectoryExist, isFileExist } from "./utils.ts";
 // https://github.com/denoland/deno/pull/6911
 function collectAllHashedFilePath(): string[] {
   const baseDirList = [
-    `${baseDepsPath}/https`,
-    `${baseDepsPath}/http`,
-    `${baseGenPath}/https`,
-    `${baseGenPath}/http`,
+    `${location.baseDepsPath}/https`,
+    `${location.baseDepsPath}/http`,
+    `${location.baseGenPath}/https`,
+    `${location.baseGenPath}/http`,
   ];
 
   const hostDirList: string[] = [];
@@ -65,10 +65,11 @@ export function collectPathOfFileWithMissingURL(): string[] {
 
   const pathListWithMissingURL: string[] = [];
   for (const path of pathList) {
-    if (path.startsWith(baseDepsPath) && path.endsWith(".metadata.json")) continue;
+    if (path.startsWith(location.baseDepsPath) && path.endsWith(".metadata.json")) continue;
 
     const adjustedPath = path.replace(regexpToRemoveExt, "");
-    const depsMetadataFilePath = adjustedPath.replace(baseGenPath, baseDepsPath) + metadataExt;
+    const depsMetadataFilePath = adjustedPath
+      .replace(location.baseGenPath, location.baseDepsPath) + metadataExt;
 
     if (isFileExist(depsMetadataFilePath)) continue;
     pathListWithMissingURL.push(path);

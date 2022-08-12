@@ -1,42 +1,46 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-import { baseDepsPath, baseGenPath } from "./main.ts";
+class CacheLocation {
+  baseDepsPath = "";
+  baseGenPath = "";
 
-type CacheLocation = {
-  baseDepsPath: string;
-  baseGenPath: string;
-};
+  async obtainCacheLocation(): Promise<void> {
+    // NOTE:
+    // "--json" option with "deno info" was unstable before Deno v1.10
+    const process = Deno.run({
+      cmd: [Deno.execPath(), "info", "--json", "--unstable"],
+      stdout: "piped",
+      stderr: "piped",
+    });
 
-export async function obtainCacheLocation(): Promise<CacheLocation> {
-  // NOTE:
-  // "--json" option with "deno info" was unstable before Deno v1.10
-  const process = Deno.run({
-    cmd: [Deno.execPath(), "info", "--json", "--unstable"],
-    stdout: "piped",
-    stderr: "piped",
-  });
+    const [stderr, stdout, status] = await Promise.all([
+      process.stderrOutput(),
+      process.output(),
+      process.status(),
+    ]);
 
-  const [stderr, stdout, status] = await Promise.all([
-    process.stderrOutput(),
-    process.output(),
-    process.status(),
-  ]);
+    let output: string;
 
-  let output: string;
+    if (status.success) {
+      output = new TextDecoder().decode(stdout);
+      process.close();
+    } else {
+      const errorString = new TextDecoder().decode(stderr);
+      console.error(errorString);
+      process.close();
+      Deno.exit(status.code);
+    }
 
-  if (status.success) {
-    output = new TextDecoder().decode(stdout);
-    process.close();
-  } else {
-    const errorString = new TextDecoder().decode(stderr);
-    console.error(errorString);
-    process.close();
-    Deno.exit(status.code);
+    const jsonData = JSON.parse(output);
+
+    this.baseDepsPath = jsonData.modulesCache;
+    this.baseGenPath = jsonData.typescriptCache;
   }
-
-  const jsonData = JSON.parse(output);
-  return { baseDepsPath: jsonData.modulesCache, baseGenPath: jsonData.typescriptCache };
 }
+
+const location = new CacheLocation();
+Object.seal(location);
+export { location };
 
 type BaseFilePath = {
   depsHashedPath: string;
@@ -55,12 +59,12 @@ export function buildBaseFilePath(
   const hostDirName = parsedUrl.hostname + portString;
   const pathName = parsedUrl.pathname.slice(1); // remove leading letter "/"
 
-  const depsHashedPath = [baseDepsPath, protocolDirName, hostDirName, hash].join("/");
-  const genHashedPath = [baseGenPath, protocolDirName, hostDirName, hash].join("/");
+  const depsHashedPath = [location.baseDepsPath, protocolDirName, hostDirName, hash].join("/");
+  const genHashedPath = [location.baseGenPath, protocolDirName, hostDirName, hash].join("/");
 
   // For compiler cache files created by Deno v1.2.2 or earlier
   // https://github.com/denoland/deno/pull/6911
-  const genUrlPath = [baseGenPath, protocolDirName, hostDirName, pathName].join("/");
+  const genUrlPath = [location.baseGenPath, protocolDirName, hostDirName, pathName].join("/");
 
   return { depsHashedPath, genHashedPath, genUrlPath };
 }

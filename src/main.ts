@@ -1,7 +1,7 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
 import { checkDenoVersion, MIN_DENO_VERSION, SCRIPT_VERSION } from "./version.ts";
-import { obtainCacheLocation } from "./location.ts";
+import { location } from "./location.ts";
 import { sortOutArgs } from "./options.ts";
 import { ModuleData } from "./moduleData.ts";
 import { collectPathOfFileWithMissingURL } from "./missingUrl.ts";
@@ -17,23 +17,14 @@ import {
   displaySearchCriteria,
   displaySearchLocation,
   ResultId,
+  updateOutputMode,
 } from "./messages.ts";
-
-// Cache location
-export let baseDepsPath = "";
-export let baseGenPath = "";
-
-// Output mode
-export let quietMode = false;
-export let verboseMode = false;
 
 async function main() {
   if (checkDenoVersion(MIN_DENO_VERSION) === false) {
     displayResultMessage({ id: ResultId.VersionError, version: MIN_DENO_VERSION });
     Deno.exit();
   }
-
-  ({ baseDepsPath, baseGenPath } = await obtainCacheLocation());
 
   const { optionFlags, target, invalidArgs } = sortOutArgs(Deno.args);
 
@@ -49,9 +40,9 @@ async function main() {
     Deno.exit();
   }
 
-  // Set output mode to be applied in subsequent processing
-  quietMode = optionFlags.quiet;
-  verboseMode = optionFlags.verbose;
+  // Store the cache location and the output mode to be applied in subsequent processing
+  await location.obtainCacheLocation();
+  updateOutputMode({ quiet: optionFlags.quiet, verbose: optionFlags.verbose });
 
   // Output file list and results for missing url option
   if (optionFlags.missingUrl) {
@@ -80,7 +71,7 @@ async function main() {
 
   // Collect basic information on cached modules
   const moduleData = new ModuleData();
-  moduleData.collectModule(baseDepsPath, target);
+  moduleData.collectModule(location.baseDepsPath, target);
 
   if (optionFlags.leaves) await moduleData.extractLeavesModule(target.importMap);
 

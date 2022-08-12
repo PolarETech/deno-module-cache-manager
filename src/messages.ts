@@ -1,8 +1,16 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-import { baseDepsPath, baseGenPath, quietMode, verboseMode } from "./main.ts";
+import { location } from "./location.ts";
 import { checkDenoVersion } from "./version.ts";
 import { InvalidArgs, OptionFlags, Target } from "./options.ts";
+
+let quietMode = false;
+let verboseMode = false;
+
+export function updateOutputMode(mode: { quiet: boolean; verbose: boolean }) {
+  quietMode = mode.quiet;
+  verboseMode = mode.verbose;
+}
 
 export enum ConfirmationId {
   Delete = "delete",
@@ -183,7 +191,7 @@ export function displaySearchCriteria(
 
 export function displaySearchLocation(): void {
   if (verboseMode === false) return;
-  console.log(`Search locations:\n - ${baseDepsPath}\n - ${baseGenPath}`);
+  console.log(`Search locations:\n - ${location.baseDepsPath}\n - ${location.baseGenPath}`);
 }
 
 export function displayCursor(show = true): void {
