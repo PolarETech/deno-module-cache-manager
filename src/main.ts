@@ -107,7 +107,12 @@ async function main() {
       id: ConfirmationId.Delete,
       fileCount: moduleData.relatedFilePathListLength,
     }, optionFlags.skipConfirmation) &&
-      deleteFile(moduleData.relatedFilePathList);
+      deleteFile(
+        moduleData.relatedFilePathList,
+        (filePath: string) => {
+          displayResultMessage({ id: ResultId.DeletedFile, filePath });
+        },
+      );
 
     Deno.exit();
   }

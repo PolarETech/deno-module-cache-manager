@@ -20,8 +20,8 @@
     "bundle": "deno bundle src/main.ts bundle/cli.js",
     "fmt": "deno fmt --ignore=src/help.ts --options-line-width 100",
     "fmt:help": "deno fmt src/help.ts --options-line-width 200",
-    "test": "deno test --allow-read --allow-net",
-    "test:cov": "deno test --allow-read --allow-net --coverage=cov_profile",
+    "test": "deno test --allow-read --allow-write --allow-net",
+    "test:cov": "deno test --allow-read --allow-write --allow-net --coverage=cov_profile",
     "cov": "deno coverage cov_profile"
   }
 }
