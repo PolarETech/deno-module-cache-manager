@@ -50,7 +50,7 @@ function generateMessage(type: ConfirmationType | ResultType): string {
     case ConfirmationId.Delete:
       switch (type.fileCount) {
         case 0:
-          throw new Error("There are no files to delete.");
+          throw new Error("There are no files to delete");
         case 1:
           return "\nThis operation cannot be undone.\n" +
             `Are you sure you want to delete the above ${type.fileCount} file? (y/N): `;
@@ -111,7 +111,7 @@ function generateMessage(type: ConfirmationType | ResultType): string {
 
     default: {
       const _invalidValue: never = type;
-      throw new Error(`${_invalidValue} is invalid.`);
+      throw new Error(`${JSON.stringify(_invalidValue)} is invalid`);
     }
   }
 }
@@ -182,16 +182,20 @@ export function displaySearchCriteria(
     (target.url ? ` - Module URL contains "${target.url}"\n` : "") +
     (target.newer ? ` - Download date is equal to or newer than "${target.newer}"\n` : "") +
     (target.older ? ` - Download date is equal to or older than "${target.older}"\n` : "")
-  ) || " - All cached modules\n";
+  ) || " - All cached modules";
 
-  const message = `Search criteria:\n${criteria}`;
-
-  Deno.stdout.writeSync(new TextEncoder().encode(message));
+  const message = `Search criteria:\n${criteria}`.trimEnd();
+  console.log(message);
 }
 
 export function displaySearchLocation(): void {
   if (verboseMode === false) return;
-  console.log(`Search locations:\n - ${location.baseDepsPath}\n - ${location.baseGenPath}`);
+
+  const message = "Search locations:\n" +
+    ` - ${location.baseDepsPath}\n` +
+    ` - ${location.baseGenPath}`;
+
+  console.log(message);
 }
 
 export function displayCursor(show = true): void {
@@ -258,7 +262,7 @@ export function displayProgress(
   Deno.stdout.writeSync(new TextEncoder().encode(`${text}\r`));
 
   if (current >= total) {
-    Deno.stdout.writeSync(new TextEncoder().encode("\r\x1b[2K"));
+    Deno.stdout.writeSync(new TextEncoder().encode("\x1b[2K"));
     displayCursor(true);
   }
 }
