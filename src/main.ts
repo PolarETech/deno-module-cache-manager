@@ -36,7 +36,7 @@ async function main() {
 
   // Output help information for help option
   if (optionFlags.help) {
-    displayHelp();
+    displayHelp(SCRIPT_VERSION);
     Deno.exit();
   }
 

@@ -1,11 +1,9 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-import { SCRIPT_VERSION } from "./version.ts";
-
-export function displayHelp(): void {
+export function displayHelp(version: string): void {
   const t = " ".repeat(4);
   console.log(
-    `Deno module cache manager ${SCRIPT_VERSION}\n\n` +
+    `Deno module cache manager ${version}\n\n` +
       `USAGE:\n` +
       `${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js\n` +
       `${t}deno-module-cache-manager [OPTIONS]\n\n` +
