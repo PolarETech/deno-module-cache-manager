@@ -15,7 +15,7 @@ import {
   obtainDepsData,
   obtainDepsDataFromCachedImportMap,
   obtainDepsDataFromSpecifiedImportMap,
-} from "./moduleDeps.ts";
+} from "./module_deps.ts";
 
 type CachedModuleData = {
   [url: string]: {
@@ -170,7 +170,7 @@ export class ModuleData {
     // Therefore, we should not exclude them from the processing.
     //
     // TODO:
-    // Extension-related processing is also present in the missingUrl.ts file.
+    // Extension-related processing is also present in the missing_url.ts file.
     const extensionsInGen = [".d.ts", ".js", ".js.map", ".buildinfo", ".meta"];
 
     for (const url of this.targetedUrlList) {

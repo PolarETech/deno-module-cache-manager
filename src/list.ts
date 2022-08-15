@@ -1,6 +1,6 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
-import { ModuleData } from "./moduleData.ts";
+import { ModuleData } from "./module_data.ts";
 import { OptionFlags } from "./options.ts";
 
 export function displayCachedModuleList(

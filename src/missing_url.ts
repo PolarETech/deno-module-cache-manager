@@ -60,7 +60,7 @@ export function collectPathOfFileWithMissingURL(): string[] {
   // Therefore, we should not exclude them from the processing.
   //
   // TODO:
-  // Extension-related processing is also present in the moduleData.ts file.
+  // Extension-related processing is also present in the module_data.ts file.
   const regexpToRemoveExt = /\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/;
 
   const pathListWithMissingURL: string[] = [];

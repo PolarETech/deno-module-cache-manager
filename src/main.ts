@@ -3,8 +3,8 @@
 import { checkDenoVersion, MIN_DENO_VERSION, SCRIPT_VERSION } from "./version.ts";
 import { location } from "./location.ts";
 import { sortOutArgs } from "./options.ts";
-import { ModuleData } from "./moduleData.ts";
-import { collectPathOfFileWithMissingURL } from "./missingUrl.ts";
+import { ModuleData } from "./module_data.ts";
+import { collectPathOfFileWithMissingURL } from "./missing_url.ts";
 import { displayCachedModuleList } from "./list.ts";
 import { deleteFile } from "./delete.ts";
 import { displayHelp } from "./help.ts";

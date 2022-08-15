@@ -2,7 +2,7 @@
 
 import { assertEquals } from "../tests/deps.ts";
 import { location } from "./location.ts";
-import { collectPathOfFileWithMissingURL } from "./missingUrl.ts";
+import { collectPathOfFileWithMissingURL } from "./missing_url.ts";
 
 const testdataDir = (() => {
   const testdataUrl = new URL("../tests/testdata/", import.meta.url);
