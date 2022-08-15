@@ -185,10 +185,10 @@ export function isValidUrl(url: string): boolean {
  */
 export function formatDateString(dateString: string): string | undefined {
   // Two values, year and monthIndex, are required
-  const validInput =
+  const regexpToVerifyDateString =
     /^\d{1,4}[-/]\d{1,2}(([-/]\d{1,2})?|[-/]\d{1,2}[T ]\d{1,2}((:\d{1,2}){0,2}|(:\d{1,2}){2}\.\d{1,3}))\D*$/;
 
-  if (validInput.test(dateString) === false) return undefined;
+  if (regexpToVerifyDateString.test(dateString) === false) return undefined;
 
   const re = /\d+/g;
   const dateArray = dateString!

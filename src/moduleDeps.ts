@@ -52,14 +52,14 @@ export async function obtainDepsData(
     // NOTE:
     // The output format of "deno info" has been changed since Deno v1.4.0
     if (checkDenoVersion("1.4.0")) {
-      return new RegExp("^\\S{3}\\shttps?://");
+      return /^\S{3}\shttps?:\/\//;
     } else {
-      return new RegExp("^\\s{2}\\S{3}\\shttps?://");
+      return /^\s{2}\S{3}\shttps?:\/\//;
     }
   })();
 
-  const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
-  const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
+  const regexpToRemoveBeforeUrl = /^.*?\shttp/;
+  const regexpToRemoveAfterUrl = /\s.*$/;
 
   const execPath = Deno.execPath();
 
