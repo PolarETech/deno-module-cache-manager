@@ -4,32 +4,12 @@ import { assertEquals } from "../tests/deps.ts";
 import { buildBaseFilePath, location } from "./location.ts";
 
 Deno.test({
-  name: "store cache location #1 - deps",
-  permissions: { run: true, read: true },
+  name: "store cache location #1 - deps and gen (with stubbed deno info)",
   async fn() {
     await location.storeCacheLocation();
-    const path = location.baseDepsPath;
-    const re = /.+(?:\/|\\)deps$/;
 
-    assertEquals(re.test(path), true, `acturl path is ${path}`);
-    assertEquals(Deno.lstatSync(path).isDirectory, true);
-
-    // cleanup
-    location.baseDepsPath = "";
-    location.baseGenPath = "";
-  },
-});
-
-Deno.test({
-  name: "store cache location #2 - gen",
-  permissions: { run: true, read: true },
-  async fn() {
-    await location.storeCacheLocation();
-    const path = location.baseGenPath;
-    const re = /.+(?:\/|\\)gen$/;
-
-    assertEquals(re.test(path), true, `acturl path is ${path}`);
-    assertEquals(Deno.lstatSync(path).isDirectory, true);
+    assertEquals(location.baseDepsPath, "/deno-dir/deps");
+    assertEquals(location.baseGenPath, "/deno-dir/gen");
 
     // cleanup
     location.baseDepsPath = "";

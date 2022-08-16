@@ -3,6 +3,7 @@
 import { assertEquals } from "../tests/deps.ts";
 import { location } from "./location.ts";
 import {
+  obtainDepsData,
   obtainDepsDataFromCachedImportMap,
   obtainDepsDataFromSpecifiedImportMap,
 } from "./module_deps.ts";
@@ -22,11 +23,71 @@ const replaceConsoleError = () => {
 };
 const restoreConsoleError = () => console.error = originalConsoleError;
 
+const originalWriteSync = Deno.stdout.writeSync;
+const replaceWriteSync = () => {
+  Deno.stdout.writeSync = (message) => {
+    output += new TextDecoder().decode(message);
+  };
+};
+const restoreWriteSync = () => Deno.stdout.writeSync = originalWriteSync;
+
 const originalExit = Deno.exit;
 const replaceExit = () => {
   Deno.exit = (code) => output += `**  call Deno.exit(${code}) **`;
 };
 const restoreExit = () => Deno.exit = originalExit;
+
+Deno.test({
+  name: "obtain deps data #1 listed (with stubbed deno info)",
+  async fn() {
+    const url1 = "https://example.com/dummy1/mod.ts";
+    const url2 = "https://example.com/dummy2/mod.ts";
+    const url3 = "https://example.com/dummy3/mod.js";
+
+    const expected = {
+      [url1]: new Set([
+        "https://example.com/dummy2/mod.ts",
+        "https://example.com/dummy3/mod.js",
+      ]),
+      [url2]: new Set([
+        "https://example.com/dummy3/mod.js",
+      ]),
+      [url3]: new Set(),
+    };
+
+    const actual = await obtainDepsData([url1, url2, url3]);
+
+    assertEquals(actual, expected);
+  },
+});
+
+Deno.test({
+  name: "obtain deps data #2 display progress (with stubbed deno info)",
+  async fn() {
+    const url1 = "https://example.com/dummy1/mod.ts";
+    const url2 = "https://example.com/dummy2/mod.ts";
+    const url3 = "https://example.com/dummy3/mod.js";
+
+    const expected = "** call hideCursor **" +
+      " * 0 / 3 modules checked\r" +
+      " * 1 / 3 modules checked\r" +
+      " * 2 / 3 modules checked\r" +
+      " * 3 / 3 modules checked\r" +
+      "\x1b[2K" +
+      "** call showCursor **";
+
+    output = "";
+    replaceWriteSync();
+
+    await obtainDepsData([url1, url2, url3]);
+
+    assertEquals(output, expected);
+
+    // cleanup
+    restoreWriteSync();
+    output = "";
+  },
+});
 
 Deno.test({
   name: "obtain specified import map #1 - imports valid (fetch)",

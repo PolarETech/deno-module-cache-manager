@@ -1,9 +1,13 @@
 {
   "scopes": {
+    "../src/location.ts": {
+      "../src/deno_info.ts": "../tests/stubs/location/deno_info.ts"
+    },
     "../src/module_data.ts": {
       "../src/module_deps.ts": "../tests/stubs/module_data/module_deps.ts"
     },
     "../src/module_deps.ts": {
+      "../src/deno_info.ts": "../tests/stubs/module_deps/deno_info.ts",
       "../src/messages.ts": "../tests/stubs/module_deps/messages.ts"
     }
   }
