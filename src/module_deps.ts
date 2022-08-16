@@ -4,39 +4,7 @@ import { buildBaseFilePath } from "./location.ts";
 import { fetchJsonFile, isFileExist, isValidUrl, readJsonFile, Semaphore } from "./utils.ts";
 import { displayCursor, displayProgress } from "./messages.ts";
 import { checkDenoVersion } from "./version.ts";
-
-async function obtainDenoInfo(url: string, execPath: string): Promise<string> {
-  // NOTE:
-  // Output with "--json" option is difficult to use
-  // because the format changes significantly depending on the Deno version.
-  const process = Deno.run({
-    cmd: [execPath, "info", "--unstable", url],
-    env: { NO_COLOR: "1" },
-    stdout: "piped",
-    stderr: "piped",
-  });
-
-  // NOTE:
-  // https://github.com/denoland/deno/issues/4568
-  const [stderr, stdout, status] = await Promise.all([
-    process.stderrOutput(),
-    process.output(),
-    process.status(),
-  ]);
-
-  if (status.success) {
-    const output = new TextDecoder().decode(stdout);
-    process.close();
-    return output;
-  } else {
-    const errorString = new TextDecoder().decode(stderr);
-    console.error(`\n\n${errorString.trim()}`);
-    displayCursor();
-
-    process.close();
-    Deno.exit(status.code);
-  }
-}
+import { DenoInfo } from "./deno_info.ts";
 
 type DepsData = Record<string, Set<string>>;
 
@@ -61,8 +29,6 @@ export async function obtainDepsData(
   const regexpToRemoveBeforeUrl = /^.*?\shttp/;
   const regexpToRemoveAfterUrl = /\s.*$/;
 
-  const execPath = Deno.execPath();
-
   let counter = 0;
   const total = urlList.length;
   displayProgress(counter, total, "modules checked");
@@ -72,7 +38,7 @@ export async function obtainDepsData(
   await Promise.all(urlList.map(async (url) => {
     await semaphore.acquire();
 
-    const denoInfo = await obtainDenoInfo(url, execPath);
+    const denoInfo = await DenoInfo.obtainModuleInfo(url, displayCursor);
 
     // WARNING:
     // If the output format of "deno info" changes in the future,

@@ -41,7 +41,7 @@ async function main() {
   }
 
   // Store the cache location and the output mode to be applied in subsequent processing
-  await location.obtainCacheLocation();
+  await location.storeCacheLocation();
   updateOutputMode({ quiet: optionFlags.quiet, verbose: optionFlags.verbose });
 
   // Output file list and results for missing url option

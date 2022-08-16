@@ -4,10 +4,10 @@ import { assertEquals } from "../tests/deps.ts";
 import { buildBaseFilePath, location } from "./location.ts";
 
 Deno.test({
-  name: "obtain cache location #1 - deps",
+  name: "store cache location #1 - deps",
   permissions: { run: true, read: true },
   async fn() {
-    await location.obtainCacheLocation();
+    await location.storeCacheLocation();
     const path = location.baseDepsPath;
     const re = /.+(?:\/|\\)deps$/;
 
@@ -21,10 +21,10 @@ Deno.test({
 });
 
 Deno.test({
-  name: "obtain cache location #2 - gen",
+  name: "store cache location #2 - gen",
   permissions: { run: true, read: true },
   async fn() {
-    await location.obtainCacheLocation();
+    await location.storeCacheLocation();
     const path = location.baseGenPath;
     const re = /.+(?:\/|\\)gen$/;
 

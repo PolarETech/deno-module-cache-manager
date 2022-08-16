@@ -1,40 +1,15 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
+import { DenoInfo } from "./deno_info.ts";
+
 class CacheLocation {
   baseDepsPath = "";
   baseGenPath = "";
 
-  async obtainCacheLocation(): Promise<void> {
-    // NOTE:
-    // "--json" option with "deno info" was unstable before Deno v1.10
-    const process = Deno.run({
-      cmd: [Deno.execPath(), "info", "--json", "--unstable"],
-      stdout: "piped",
-      stderr: "piped",
-    });
-
-    const [stderr, stdout, status] = await Promise.all([
-      process.stderrOutput(),
-      process.output(),
-      process.status(),
-    ]);
-
-    let output: string;
-
-    if (status.success) {
-      output = new TextDecoder().decode(stdout);
-      process.close();
-    } else {
-      const errorString = new TextDecoder().decode(stderr);
-      console.error(errorString);
-      process.close();
-      Deno.exit(status.code);
-    }
-
-    const jsonData = JSON.parse(output);
-
-    this.baseDepsPath = jsonData.modulesCache;
-    this.baseGenPath = jsonData.typescriptCache;
+  async storeCacheLocation(): Promise<void> {
+    const denoInfo = await DenoInfo.obtainCacheLocation();
+    this.baseDepsPath = denoInfo.baseDepsPath;
+    this.baseGenPath = denoInfo.baseGenPath;
   }
 }
 
