@@ -1,0 +1,7 @@
+{
+  "scopes": {
+    "../src/module_data.ts": {
+      "../src/module_deps.ts": "../tests/stubs/module_data/module_deps.ts"
+    }
+  }
+}

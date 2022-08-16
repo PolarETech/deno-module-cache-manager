@@ -1,7 +1,10 @@
 {
   "lint": {
     "files": {
-      "include": ["src/"]
+      "include": [
+        "src/",
+        "tests/stubs/"
+      ]
     },
     "rules": {
       "tags": ["recommended"],
@@ -10,7 +13,10 @@
   },
   "fmt": {
     "files": {
-      "include": ["src/"]
+      "include": [
+        "src/",
+        "tests/stubs/"
+      ]
     },
     "options": {
       "lineWidth": 200
@@ -20,8 +26,8 @@
     "bundle": "deno bundle src/main.ts bundle/cli.js",
     "fmt": "deno fmt --ignore=src/help.ts --options-line-width 100",
     "fmt:help": "deno fmt src/help.ts --options-line-width 200",
-    "test": "deno test --allow-run --allow-read --allow-write --allow-net",
-    "test:cov": "deno test --allow-run --allow-read --allow-write --allow-net --coverage=cov_profile",
-    "cov": "deno coverage cov_profile"
+    "test": "deno test --allow-run --allow-read --allow-write --allow-net --import-map=./tests/import_map.json",
+    "test:cov": "deno test --allow-run --allow-read --allow-write --allow-net --import-map=./tests/import_map.json --coverage=cov_profile",
+    "cov": "deno coverage cov_profile --exclude='test.(js|mjs|ts|jsx|tsx)$|./tests/'"
   }
 }
