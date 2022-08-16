@@ -1,0 +1,8 @@
+{
+  "scopes": {
+    "/scope/": [{
+      "dummy1/": "https://example.com/scope1/dummy1/",
+      "mod": "https://example.com/scope1/dummy2/mod.ts"
+    }]
+  }
+}

@@ -182,7 +182,7 @@ export async function obtainDepsDataFromSpecifiedImportMap(
 
       collectedData[loc] = extractUrlFromImportMapData(jsonData);
     } catch (e) {
-      console.error("Loading import map:", loc);
+      console.error(`Loading import map: ${loc}`);
       console.error(e);
       Deno.exit(1);
     }
@@ -201,7 +201,7 @@ export function obtainDepsDataFromCachedImportMap(
   for (const file of jsonFileList) {
     const importMapFilePath = buildBaseFilePath(file.url, file.hash).depsHashedPath;
 
-    // JSON files that are not ｆor import maps may be cached.
+    // JSON files that are not for import maps may be cached.
     // Therefore, the process continues
     // even if there are invalid JSON files as import maps.
     try {

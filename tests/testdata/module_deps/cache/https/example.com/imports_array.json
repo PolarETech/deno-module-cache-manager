@@ -1,0 +1,6 @@
+{
+  "imports": [{
+    "dummy1/": "https://example.com/dummy1/",
+    "mod": "https://example.com/dummy2/mod.ts"
+  }]
+}
