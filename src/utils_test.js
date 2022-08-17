@@ -428,9 +428,66 @@ Deno.test({
 });
 
 Deno.test({
-  name: "verify url string #2 - invalid url",
+  name: "verify url string #2 - blob:",
+  fn() {
+    const url = URL.createObjectURL(new Blob(["foo"], { type: "text/plain" }));
+    assertEquals(isValidUrl(url), true);
+    URL.revokeObjectURL(url);
+  },
+});
+
+Deno.test({
+  name: "verify url string #3 - data:",
+  fn() {
+    const url = "data:text/plain;base64,Zm9v";
+    assertEquals(isValidUrl(url), true);
+  },
+});
+
+Deno.test({
+  name: "verify url string #4 - related path",
   fn() {
     const url = "./foo/bar.js";
+    assertEquals(isValidUrl(url), false);
+  },
+});
+
+Deno.test({
+  name: "verify url string #5 - absolute path",
+  fn() {
+    const url = "/foo/bar/baz.js";
+    assertEquals(isValidUrl(url), false);
+  },
+});
+
+Deno.test({
+  name: "verify url string #6 - absolute path in windows (backslash)",
+  fn() {
+    const url = "C:\Users\foo\bar\baz.js";
+    assertEquals(isValidUrl(url), false);
+  },
+});
+
+Deno.test({
+  name: "verify url string #7 - abusolute path in windows (slash)",
+  fn() {
+    const url = "C:/Users/foo/bar/baz.js";
+    assertEquals(isValidUrl(url), false);
+  },
+});
+
+Deno.test({
+  name: "verify url string #8 - there is a :// in the middle",
+  fn() {
+    const url = "C:/Users/foo://bar/baz.js";
+    assertEquals(isValidUrl(url), false);
+  },
+});
+
+Deno.test({
+  name: "verify url string #9 - url scheme only",
+  fn() {
+    const url = "http://";
     assertEquals(isValidUrl(url), false);
   },
 });

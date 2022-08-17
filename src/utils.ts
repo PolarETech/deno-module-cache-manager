@@ -169,6 +169,9 @@ export function isDirectoryExist(path: string): boolean {
 }
 
 export function isValidUrl(url: string): boolean {
+  const re = /^(?:blob:|data:|[A-Za-z][A-Za-z0-9.+-]*:\/\/)/;
+  if (re.test(url) === false) return false;
+
   try {
     new URL(url);
     return true;
