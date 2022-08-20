@@ -1,6 +1,7 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
 import { assertEquals, assertThrows } from "../tests/deps.ts";
+import { MockConsole, MockStdin, MockStdout } from "../tests/mocks/io.ts";
 import { location } from "./location.ts";
 import {
   ConfirmationId,
@@ -14,33 +15,47 @@ import {
   updateOutputMode,
 } from "./messages.ts";
 
-let output = "";
-
-const originalConsoleLog = console.log;
-const originalWriteSync = Deno.stdout.writeSync;
-const originalReadSync = Deno.stdin.readSync;
-
-const replaceConsoleLog = () => {
-  console.log = (message) => output += message;
+const mock = {
+  console: new MockConsole(),
+  stdout: new MockStdout(),
+  stdin: new MockStdin(),
+  addSignalListener: {
+    output: [],
+    _originalListener: Deno.addSignalListener,
+    resetOutput() {
+      this.output.length = 0;
+    },
+    replaceListenerFn() {
+      this.resetOutput();
+      Deno.addSignalListener = (...args) => {
+        this.output.push(args);
+      };
+    },
+    restoreListenerFn() {
+      Deno.addSignalListener = this._originalListener;
+      this.resetOutput();
+    },
+  },
+  removeSignalListener: {
+    output: [],
+    _originalListener: Deno.removeSignalListener,
+    resetOutput() {
+      this.output.length = 0;
+    },
+    replaceListenerFn() {
+      this.resetOutput();
+      Deno.removeSignalListener = (...args) => {
+        this.output.push(args);
+      };
+    },
+    restoreListenerFn() {
+      Deno.removeSignalListener = this._originalListener;
+      this.resetOutput();
+    },
+  },
 };
-const replaceWriteSync = () => {
-  Deno.stdout.writeSync = (message) => {
-    output += new TextDecoder().decode(message);
-  };
-};
-const replaceReadSync = (input) => {
-  Deno.stdin.readSync = (p) => {
-    p.set(new TextEncoder().encode(input));
-    return input.length;
-  };
-};
-
-const restoreConsoleLog = () => console.log = originalConsoleLog;
-const restoreWriteSync = () => Deno.stdout.writeSync = originalWriteSync;
-const restoreReadSync = () => Deno.stdin.readSync = originalReadSync;
 
 const restoreProperties = () => {
-  output = "";
   location.baseDepsPath = "";
   location.baseGenPath = "";
   updateOutputMode({ quiet: false, verbose: false });
@@ -49,20 +64,20 @@ const restoreProperties = () => {
 Deno.test({
   name: "display confirmation #1 - long time",
   fn() {
-    const expected = "It may take a very long time. " +
-      "Are you sure you want to start the process? (y/N): ";
+    const expected = [
+      "It may take a very long time. " +
+      "Are you sure you want to start the process? (y/N): ",
+    ];
 
-    output = "";
-    replaceWriteSync();
-    replaceReadSync("\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn();
 
     displayConfirmationMessage({ id: ConfirmationId.LongTime });
-    assertEquals(output, expected);
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
@@ -70,20 +85,20 @@ Deno.test({
   name: "display confirmation #2 - delete 1 file",
   fn() {
     const fileCount = 1;
-    const expected = "\nThis operation cannot be undone.\n" +
-      `Are you sure you want to delete the above ${fileCount} file? (y/N): `;
+    const expected = [
+      "\nThis operation cannot be undone.\n" +
+      `Are you sure you want to delete the above ${fileCount} file? (y/N): `,
+    ];
 
-    output = "";
-    replaceWriteSync();
-    replaceReadSync("\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn();
 
     displayConfirmationMessage({ id: ConfirmationId.Delete, fileCount });
-    assertEquals(output, expected);
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
@@ -91,20 +106,20 @@ Deno.test({
   name: "display confirmation #3 - delete multiple files",
   fn() {
     const fileCount = 2;
-    const expected = "\nThis operation cannot be undone.\n" +
-      `Are you sure you want to delete the above ${fileCount} files? (y/N): `;
+    const expected = [
+      "\nThis operation cannot be undone.\n" +
+      `Are you sure you want to delete the above ${fileCount} files? (y/N): `,
+    ];
 
-    output = "";
-    replaceWriteSync();
-    replaceReadSync("\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn();
 
     displayConfirmationMessage({ id: ConfirmationId.Delete, fileCount });
-    assertEquals(output, expected);
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
@@ -124,48 +139,45 @@ Deno.test({
 Deno.test({
   name: "display confirmation #5 - answer n",
   fn() {
-    replaceWriteSync();
-    replaceReadSync("n\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn("n\n");
 
     const actual = displayConfirmationMessage({ id: ConfirmationId.LongTime });
     assertEquals(actual, false);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
 Deno.test({
   name: "display confirmation #6 - answer y",
   fn() {
-    replaceWriteSync();
-    replaceReadSync("y\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn("y\n");
 
     const actual = displayConfirmationMessage({ id: ConfirmationId.LongTime });
     assertEquals(actual, true);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
 Deno.test({
   name: "display confirmation #7 - answer Y",
   fn() {
-    replaceWriteSync();
-    replaceReadSync("Y\n");
+    mock.stdout.replaceWriteSyncFn();
+    mock.stdin.replaceReadSyncFn("Y\n");
 
     const actual = displayConfirmationMessage({ id: ConfirmationId.LongTime });
     assertEquals(actual, true);
 
     // cleanup
-    restoreWriteSync();
-    restoreReadSync();
-    restoreProperties();
+    mock.stdout.restoreWriteSyncFn();
+    mock.stdin.restoreReadSyncFn();
   },
 });
 
@@ -183,14 +195,15 @@ Deno.test({
     const version = "0.1.2";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`Deno module cache manager ${version}`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.Version, version });
-    assertEquals(output, `Deno module cache manager ${version}`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -201,14 +214,15 @@ Deno.test({
     const version = "0.1.2";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`INFO: Deno version ${version} or later is required`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.VersionError, version });
-    assertEquals(output, `INFO: Deno version ${version} or later is required`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -219,14 +233,15 @@ Deno.test({
     const option = "newer";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`INFO: The specified ${option} date is invalid`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.InvalidDate, option });
-    assertEquals(output, `INFO: The specified ${option} date is invalid`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -237,14 +252,15 @@ Deno.test({
     const option = "older";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`INFO: Please specify the ${option} date`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.DateRequired, option });
-    assertEquals(output, `INFO: Please specify the ${option} date`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -254,14 +270,15 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: Please specify the module url"];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.ModuleUrlRequired });
-    assertEquals(output, "INFO: Please specify the module url");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -272,14 +289,15 @@ Deno.test({
     const moduleCount = 0;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: No modules are found"];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundModule, moduleCount });
-    assertEquals(output, "INFO: No modules are found");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -290,14 +308,15 @@ Deno.test({
     const moduleCount = 1;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${moduleCount} module is found`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundModule, moduleCount });
-    assertEquals(output, `\nTotal: ${moduleCount} module is found`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -308,14 +327,15 @@ Deno.test({
     const moduleCount = 2;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${moduleCount} modules are found`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundModule, moduleCount });
-    assertEquals(output, `\nTotal: ${moduleCount} modules are found`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -327,14 +347,15 @@ Deno.test({
     const fileCount = 1;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${moduleCount} module is found (${fileCount} file)`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundModule, moduleCount, fileCount });
-    assertEquals(output, `\nTotal: ${moduleCount} module is found (${fileCount} file)`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -346,14 +367,15 @@ Deno.test({
     const fileCount = 2;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${moduleCount} modules are found (${fileCount} files)`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundModule, moduleCount, fileCount });
-    assertEquals(output, `\nTotal: ${moduleCount} modules are found (${fileCount} files)`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -364,14 +386,15 @@ Deno.test({
     const fileCount = 0;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: No files are found"];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundFile, fileCount });
-    assertEquals(output, "INFO: No files are found");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -382,14 +405,15 @@ Deno.test({
     const fileCount = 1;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${fileCount} file is found`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundFile, fileCount });
-    assertEquals(output, `\nTotal: ${fileCount} file is found`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -400,14 +424,15 @@ Deno.test({
     const fileCount = 2;
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`\nTotal: ${fileCount} files are found`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.FoundFile, fileCount });
-    assertEquals(output, `\nTotal: ${fileCount} files are found`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -418,14 +443,15 @@ Deno.test({
     const filePath = "/foo/bar.js";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [`DELETED: ${filePath}`];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.DeletedFile, filePath });
-    assertEquals(output, `DELETED: ${filePath}`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -435,14 +461,15 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: true, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [];
+
+    mock.console.replaceLogFn();
 
     displayResultMessage({ id: ResultId.ModuleUrlRequired });
-    assertEquals(output, "");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -457,6 +484,9 @@ Deno.test({
       Error,
       `{"id":"invalid"} is invalid`,
     );
+
+    // cleanup
+    restoreProperties();
   },
 });
 
@@ -471,15 +501,15 @@ Deno.test({
       invalidOlder: false,
     };
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: Please specify the module url"];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "INFO: Please specify the module url");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -494,15 +524,15 @@ Deno.test({
       invalidOlder: false,
     };
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: Please specify the newer date"];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "INFO: Please specify the newer date");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -517,15 +547,15 @@ Deno.test({
       invalidOlder: false,
     };
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: Please specify the older date"];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "INFO: Please specify the older date");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -540,15 +570,15 @@ Deno.test({
       invalidOlder: false,
     };
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: The specified newer date is invalid"];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "INFO: The specified newer date is invalid");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -563,15 +593,15 @@ Deno.test({
       invalidOlder: true,
     };
 
-    output = "";
-    replaceConsoleLog();
+    const expected = ["INFO: The specified older date is invalid"];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "INFO: The specified older date is invalid");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -586,19 +616,19 @@ Deno.test({
       invalidOlder: false,
     };
 
-    const expected = "INFO: Please specify the module url" +
-      "INFO: Please specify the older date" +
-      "INFO: The specified newer date is invalid";
+    const expected = [
+      "INFO: Please specify the module url",
+      "INFO: Please specify the older date",
+      "INFO: The specified newer date is invalid",
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, expected);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    restoreProperties();
+    mock.console.restoreLogFn();
   },
 });
 
@@ -614,14 +644,15 @@ Deno.test({
     };
     updateOutputMode({ quiet: true, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [];
+
+    mock.console.replaceLogFn();
 
     displayInvalidArgsMessage(invalidArgs);
-    assertEquals(output, "");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -631,14 +662,18 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search criteria:\n" +
+      " - All cached modules",
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria({}, {});
-    assertEquals(output, "Search criteria:\n - All cached modules");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -658,14 +693,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search criteria:\n" +
+      ` - Search with option "--missing-url"`,
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, `Search criteria:\n - Search with option "--missing-url"`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -685,14 +724,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search criteria:\n" +
+      ` - Search with option "--leaves"`,
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, `Search criteria:\n - Search with option "--leaves"`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -712,14 +755,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search criteria:\n" +
+      ` - Search with option "--uses"`,
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, `Search criteria:\n - Search with option "--uses"`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -739,14 +786,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search criteria:\n" +
+      ` - Module URL contains "example.com"`,
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, `Search criteria:\n - Module URL contains "example.com"`);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -766,17 +817,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    const expected = "Search criteria:\n" +
-      ` - Download date is equal to or newer than "2022-01-02T03:45:06.000Z"`;
+    const expected = [
+      "Search criteria:\n" +
+      ` - Download date is equal to or newer than "2022-01-02T03:45:06.000Z"`,
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, expected);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -796,17 +848,18 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    const expected = "Search criteria:\n" +
-      ` - Download date is equal to or older than "2022-01-02T03:45:06.000Z"`;
+    const expected = [
+      "Search criteria:\n" +
+      ` - Download date is equal to or older than "2022-01-02T03:45:06.000Z"`,
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, expected);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -826,20 +879,21 @@ Deno.test({
     };
     updateOutputMode({ quiet: false, verbose: true });
 
-    const expected = "Search criteria:\n" +
+    const expected = [
+      "Search criteria:\n" +
       ` - Search with option "--leaves"\n` +
       ` - Module URL contains "example.com"\n` +
       ` - Download date is equal to or newer than "2021-12-11T10:09:58.000Z"\n` +
-      ` - Download date is equal to or older than "2022-01-02T03:45:06.000Z"`;
+      ` - Download date is equal to or older than "2022-01-02T03:45:06.000Z"`,
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.console.replaceLogFn();
 
     displaySearchCriteria(option, target);
-    assertEquals(output, expected);
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -849,14 +903,15 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [];
+
+    mock.console.replaceLogFn();
 
     displaySearchCriteria({}, {});
-    assertEquals(output, "");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -868,14 +923,19 @@ Deno.test({
     location.baseGenPath = "/bar/baz";
     updateOutputMode({ quiet: false, verbose: true });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [
+      "Search locations:\n" +
+      " - /foo/bar\n" +
+      " - /bar/baz",
+    ];
+
+    mock.console.replaceLogFn();
 
     displaySearchLocation();
-    assertEquals(output, "Search locations:\n - /foo/bar\n - /bar/baz");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -887,14 +947,15 @@ Deno.test({
     location.baseGenPath = "/bar/baz";
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceConsoleLog();
+    const expected = [];
+
+    mock.console.replaceLogFn();
 
     displaySearchLocation();
-    assertEquals(output, "");
+    assertEquals(mock.console.output, expected);
 
     // cleanup
-    restoreConsoleLog();
+    mock.console.restoreLogFn();
     restoreProperties();
   },
 });
@@ -904,14 +965,15 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceWriteSync();
+    const expected = [" *  2 / 10 completed\r"];
+
+    mock.stdout.replaceWriteSyncFn();
 
     displayProgress(2, 10, "completed");
-    assertEquals(output, " *  2 / 10 completed\r");
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
+    mock.stdout.restoreWriteSyncFn();
     restoreProperties();
   },
 });
@@ -921,14 +983,15 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: true, verbose: false });
 
-    output = "";
-    replaceWriteSync();
+    const expected = [];
 
-    displayProgress(2, 10, "completed");
-    assertEquals(output, "");
+    mock.stdout.replaceWriteSyncFn();
+
+    displayProgress(2, 10);
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
+    mock.stdout.restoreWriteSyncFn();
     restoreProperties();
   },
 });
@@ -939,27 +1002,26 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceWriteSync();
+    const expected = [
+      "\x1b[?25l",
+      " *  0 / 10 done\r",
+    ];
 
-    const addSignal = [];
-    const originalAddSignalListener = Deno.addSignalListener;
-    Deno.addSignalListener = (...args) => {
-      addSignal.push(args);
-    };
+    mock.stdout.replaceWriteSyncFn();
+    mock.addSignalListener.replaceListenerFn();
 
-    displayProgress(0, 10, "completed");
-    assertEquals(output, "\x1b[?25l *  0 / 10 completed\r");
+    displayProgress(0, 10);
+    assertEquals(mock.stdout.output, expected);
 
-    assertEquals(addSignal[0][0], "SIGINT");
-    assertEquals(addSignal[0][1].name, "showCursor");
-    assertEquals(addSignal[1][0], "SIGTERM");
-    assertEquals(addSignal[1][1].name, "showCursor");
+    assertEquals(mock.addSignalListener.output[0][0], "SIGINT");
+    assertEquals(mock.addSignalListener.output[0][1].name, "showCursor");
+    assertEquals(mock.addSignalListener.output[1][0], "SIGTERM");
+    assertEquals(mock.addSignalListener.output[1][1].name, "showCursor");
 
     // cleanup
-    restoreWriteSync();
+    mock.stdout.restoreWriteSyncFn();
+    mock.addSignalListener.restoreListenerFn();
     restoreProperties();
-    Deno.addSignalListener = originalAddSignalListener;
   },
 });
 
@@ -969,38 +1031,33 @@ Deno.test({
   fn() {
     updateOutputMode({ quiet: false, verbose: false });
 
-    output = "";
-    replaceWriteSync();
+    const expected = [
+      " * 10 / 10 done\r",
+      "\x1b[2K",
+      "\x1b[?25h",
+    ];
 
-    const removeSignal = [];
-    const originalRemoveSignalListener = Deno.removeSignalListener;
-    Deno.removeSignalListener = (...args) => {
-      removeSignal.push(args);
-    };
+    mock.stdout.replaceWriteSyncFn();
+    mock.removeSignalListener.replaceListenerFn();
+    mock.addSignalListener.replaceListenerFn();
 
-    const addSignal = [];
-    const originalAddSignalListener = Deno.addSignalListener;
-    Deno.addSignalListener = (...args) => {
-      addSignal.push(args);
-    };
+    displayProgress(10, 10);
+    assertEquals(mock.stdout.output, expected);
 
-    displayProgress(10, 10, "completed");
-    assertEquals(output, " * 10 / 10 completed\r\x1b[2K\x1b[?25h");
+    assertEquals(mock.removeSignalListener.output[0][0], "SIGINT");
+    assertEquals(mock.removeSignalListener.output[0][1].name, "showCursor");
+    assertEquals(mock.removeSignalListener.output[1][0], "SIGTERM");
+    assertEquals(mock.removeSignalListener.output[1][1].name, "showCursor");
 
-    assertEquals(removeSignal[0][0], "SIGINT");
-    assertEquals(removeSignal[0][1].name, "showCursor");
-    assertEquals(removeSignal[1][0], "SIGTERM");
-    assertEquals(removeSignal[1][1].name, "showCursor");
-
-    assertEquals(addSignal[0][0], "SIGINT");
-    assertEquals(addSignal[0][1].name, "");
-    assertEquals(addSignal[1][0], "SIGTERM");
-    assertEquals(addSignal[1][1].name, "");
+    assertEquals(mock.addSignalListener.output[0][0], "SIGINT");
+    assertEquals(mock.addSignalListener.output[0][1].name, "");
+    assertEquals(mock.addSignalListener.output[1][0], "SIGTERM");
+    assertEquals(mock.addSignalListener.output[1][1].name, "");
 
     // cleanup
-    restoreWriteSync();
+    mock.stdout.restoreWriteSyncFn();
+    mock.removeSignalListener.restoreListenerFn();
+    mock.addSignalListener.restoreListenerFn();
     restoreProperties();
-    Deno.addSignalListener = originalAddSignalListener;
-    Deno.removeSignalListener = originalRemoveSignalListener;
   },
 });

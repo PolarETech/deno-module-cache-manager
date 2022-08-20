@@ -1,15 +1,10 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
 import { assertEquals } from "../tests/deps.ts";
+import { MockConsole } from "../tests/mocks/io.ts";
 import { displayCachedModuleList } from "./list.ts";
 
-let output = "";
-
-const originalConsoleLog = console.log;
-const replaceConsoleLog = () => {
-  console.log = (message) => output += message;
-};
-const restoreConsoleLog = () => console.log = originalConsoleLog;
+const mock = new MockConsole();
 
 Deno.test({
   name: "display list #1 - url",
@@ -28,17 +23,15 @@ Deno.test({
       withPath: false,
     };
 
-    const expected = moduleData.sortedUrlList.join("");
+    const expected = moduleData.sortedUrlList;
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayCachedModuleList(moduleData, optionFlags);
-    assertEquals(output, expected);
+    assertEquals(mock.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
 
@@ -77,17 +70,15 @@ Deno.test({
       "https://example.com/dummy1/dummy2/mod.ts  2022-01-02T03:45:06.000Z",
       "https://example.com/dummy1/mod.ts         2022-12-30T11:07:50.000Z",
       "https://example.com/dummy2/mod.ts         Unknown",
-    ].join("");
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayCachedModuleList(moduleData, optionFlags);
-    assertEquals(output, expected);
+    assertEquals(mock.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
 
@@ -108,17 +99,15 @@ Deno.test({
       withPath: false,
     };
 
-    const expected = moduleData.sortedUrlListByDate.join("");
+    const expected = moduleData.sortedUrlListByDate;
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayCachedModuleList(moduleData, optionFlags);
-    assertEquals(output, expected);
+    assertEquals(mock.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
 
@@ -156,17 +145,15 @@ Deno.test({
       " - bar1",
       " - bar2",
       " - bar3",
-    ].join("");
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayCachedModuleList(moduleData, optionFlags);
-    assertEquals(output, expected);
+    assertEquals(mock.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
 
@@ -204,16 +191,14 @@ Deno.test({
       " - bar1",
       " - bar2",
       " - bar3",
-    ].join("");
+    ];
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayCachedModuleList(moduleData, optionFlags);
-    assertEquals(output, expected);
+    assertEquals(mock.output, expected);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });

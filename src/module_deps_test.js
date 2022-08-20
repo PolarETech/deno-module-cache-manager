@@ -1,6 +1,7 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
 import { assertEquals } from "../tests/deps.ts";
+import { MockConsole, MockStdout } from "../tests/mocks/io.ts";
 import { location } from "./location.ts";
 import {
   obtainDepsData,
@@ -15,27 +16,19 @@ const testdataDir = (() => {
     : testdataUrl.pathname;
 })();
 
-let output = "";
-
-const originalConsoleError = console.error;
-const replaceConsoleError = () => {
-  console.error = (message) => output += message;
+const mock = {
+  console: new MockConsole(),
+  stdout: new MockStdout(),
+  exit: {
+    _originalExit: Deno.exit,
+    replaceExitFn() {
+      Deno.exit = (code) => console.error(`**  call Deno.exit(${code}) **`);
+    },
+    restoreExitFn() {
+      Deno.exit = this._originalExit;
+    },
+  },
 };
-const restoreConsoleError = () => console.error = originalConsoleError;
-
-const originalWriteSync = Deno.stdout.writeSync;
-const replaceWriteSync = () => {
-  Deno.stdout.writeSync = (message) => {
-    output += new TextDecoder().decode(message);
-  };
-};
-const restoreWriteSync = () => Deno.stdout.writeSync = originalWriteSync;
-
-const originalExit = Deno.exit;
-const replaceExit = () => {
-  Deno.exit = (code) => output += `**  call Deno.exit(${code}) **`;
-};
-const restoreExit = () => Deno.exit = originalExit;
 
 Deno.test({
   name: "obtain deps data #1 listed (with stubbed deno info)",
@@ -68,24 +61,24 @@ Deno.test({
     const url2 = "https://example.com/dummy2/mod.ts";
     const url3 = "https://example.com/dummy3/mod.js";
 
-    const expected = "** call hideCursor **" +
-      " * 0 / 3 modules checked\r" +
-      " * 1 / 3 modules checked\r" +
-      " * 2 / 3 modules checked\r" +
-      " * 3 / 3 modules checked\r" +
-      "\x1b[2K" +
-      "** call showCursor **";
+    const expected = [
+      "** call hideCursor **",
+      " * 0 / 3 modules checked\r",
+      " * 1 / 3 modules checked\r",
+      " * 2 / 3 modules checked\r",
+      " * 3 / 3 modules checked\r",
+      "\x1b[2K",
+      "** call showCursor **",
+    ];
 
-    output = "";
-    replaceWriteSync();
+    mock.stdout.replaceWriteSyncFn();
 
     await obtainDepsData([url1, url2, url3]);
 
-    assertEquals(output, expected);
+    assertEquals(mock.stdout.output, expected);
 
     // cleanup
-    restoreWriteSync();
-    output = "";
+    mock.stdout.restoreWriteSyncFn();
   },
 });
 
@@ -182,21 +175,26 @@ Deno.test({
   async fn() {
     const path = `${testdataDir}module_deps/non-existing.json`;
 
-    const expected = `Loading import map: ${path}` +
-      "Error: The specified import map URL or path is invalid" +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${path}`,
+      "Error",
+      "The specified import map URL or path is invalid",
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([path]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -206,21 +204,26 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/no_json_format.json`;
 
-    const expected = `Loading import map: ${url}` +
-      "TypeError: The specified resource is not a valid JSON file" +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      "The specified resource is not a valid JSON file",
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -230,22 +233,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/imports_text.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "imports" top-level key should be a JSON object\n` +
-      `"imports":"dummy"` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "imports" top-level key should be a JSON object\n` +
+      `"imports":"dummy"`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -255,22 +263,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/imports_null.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "imports" top-level key should be a JSON object\n` +
-      `"imports":null` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "imports" top-level key should be a JSON object\n` +
+      `"imports":null`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -280,22 +293,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/imports_array.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "imports" top-level key should be a JSON object\n` +
-      `"imports":[{"dummy1/":"https://example.com/dummy1/","mod":"https://example.com/dummy2/mod.ts"}]` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "imports" top-level key should be a JSON object\n` +
+      `"imports":[{"dummy1/":"https://example.com/dummy1/","mod":"https://example.com/dummy2/mod.ts"}]`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -305,22 +323,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scopes_text.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "scopes" top-level key should be a JSON object\n` +
-      `"scopes":"dummy"` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "scopes" top-level key should be a JSON object\n` +
+      `"scopes":"dummy"`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -330,22 +353,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scopes_null.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "scopes" top-level key should be a JSON object\n` +
-      `"scopes":null` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "scopes" top-level key should be a JSON object\n` +
+      `"scopes":null`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -355,24 +383,29 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scopes_array.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The "scopes" top-level key should be a JSON object\n` +
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The "scopes" top-level key should be a JSON object\n` +
       `"scopes":[{"/scope1/":{"dummy1/":"https://example.com/scope1/dummy1/",` +
       `"mod":"https://example.com/scope1/dummy2/mod.ts"},` +
-      `"/scope2/":{"dummy":"https://example.com/scope2/dummy/mod.ts"}}]` +
-      "**  call Deno.exit(1) **";
+      `"/scope2/":{"dummy":"https://example.com/scope2/dummy/mod.ts"}}]`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -382,22 +415,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scope_text.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The value of the scope should be a JSON object\n` +
-      `"/scope/":"dummy" in "scopes":{"/scope/":"dummy"}` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The value of the scope should be a JSON object\n` +
+      `"/scope/":"dummy" in "scopes":{"/scope/":"dummy"}`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -407,22 +445,27 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scope_null.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The value of the scope should be a JSON object\n` +
-      `"/scope/":null in "scopes":{"/scope/":null}` +
-      "**  call Deno.exit(1) **";
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The value of the scope should be a JSON object\n` +
+      `"/scope/":null in "scopes":{"/scope/":null}`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 
@@ -432,25 +475,30 @@ Deno.test({
   async fn() {
     const url = `file://${testdataDir}module_deps/cache/https/example.com/scope_array.json`;
 
-    const expected = `Loading import map: ${url}` +
-      `TypeError: The value of the scope should be a JSON object\n` +
+    const expected = [
+      `Loading import map: ${url}`,
+      "TypeError",
+      `The value of the scope should be a JSON object\n` +
       `"/scope/":[{"dummy1/":"https://example.com/scope1/dummy1/",` +
       `"mod":"https://example.com/scope1/dummy2/mod.ts"}] in ` +
       `"scopes":{"/scope/":[{"dummy1/":"https://example.com/scope1/dummy1/",` +
-      `"mod":"https://example.com/scope1/dummy2/mod.ts"}]}` +
-      "**  call Deno.exit(1) **";
+      `"mod":"https://example.com/scope1/dummy2/mod.ts"}]}`,
+      "**  call Deno.exit(1) **",
+    ];
 
-    output = "";
-    replaceConsoleError();
-    replaceExit();
+    mock.console.replaceErrorFn();
+    mock.exit.replaceExitFn();
 
     await obtainDepsDataFromSpecifiedImportMap(new Set([url]));
-    assertEquals(output, expected);
+
+    assertEquals(mock.console.output[0], expected[0]);
+    assertEquals(mock.console.output[1].name, expected[1]);
+    assertEquals(mock.console.output[1].message, expected[2]);
+    assertEquals(mock.console.output.slice(-1)[0], expected[3]);
 
     // cleanup
-    restoreConsoleError();
-    restoreExit();
-    output = "";
+    mock.console.restoreErrorFn();
+    mock.exit.restoreExitFn();
   },
 });
 

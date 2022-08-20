@@ -3,6 +3,7 @@
     "files": {
       "include": [
         "src/",
+        "tests/mocks/",
         "tests/stubs/"
       ]
     },
@@ -15,6 +16,7 @@
     "files": {
       "include": [
         "src/",
+        "tests/mocks/",
         "tests/stubs/"
       ]
     },

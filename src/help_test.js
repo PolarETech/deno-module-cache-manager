@@ -1,7 +1,10 @@
 // Copyright 2022 Polar Tech. All rights reserved. MIT license.
 
 import { assertEquals } from "../tests/deps.ts";
+import { MockConsole } from "../tests/mocks/io.ts";
 import { displayHelp } from "./help.ts";
+
+const mock = new MockConsole();
 
 // TODO:
 // Need to update this list along with implementation of options.
@@ -32,40 +35,29 @@ const OPTIONS = [
   "-y",
 ];
 
-let output = "";
-
-const originalConsoleLog = console.log;
-const replaceConsoleLog = () => {
-  console.log = (message) => output += message;
-};
-const restoreConsoleLog = () => console.log = originalConsoleLog;
-
 Deno.test({
   name: "display help #1 - name and version",
   fn() {
     const version = "0.1.2";
     const expected = `Deno module cache manager ${version}\n\n`;
 
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayHelp(version);
-    assertEquals(output.startsWith(expected), true);
+    assertEquals(mock.output[0].startsWith(expected), true);
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
 
 Deno.test({
   name: "display help #2 - each options",
   fn() {
-    output = "";
-    replaceConsoleLog();
+    mock.replaceLogFn();
 
     displayHelp("");
-    const outputOptions = output
+    const outputOptions = mock.output[0]
       .split(/\n|\s{4,}|, | </)
       .filter((v) => v.startsWith("-"));
 
@@ -86,7 +78,6 @@ Deno.test({
     });
 
     // cleanup
-    restoreConsoleLog();
-    output = "";
+    mock.restoreLogFn();
   },
 });
