@@ -44,6 +44,7 @@ For more information, please refer to the [Deno Manual](https://deno.land/manual
 
 ```bash
 deno install --allow-run --allow-read --allow-write --allow-net -f -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
+deno cache -r https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
 ```
 
 ## Usage
