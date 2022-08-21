@@ -1,5 +1,15 @@
 # Releases
 
+### 0.4.1 / 2022.08.21
+
+- fix: error occurs when specifying a local import map file with full path on Windows
+- refactor: reduce code size, etc.
+- refactor: change the handling of global variables in main
+- refactor: change RegExp from constructor function to literal notation
+- refactor: rename files
+- refactor: separate functions using deno info command
+- refactor: improve testability and add tests for each exported function
+
 ### 0.4.0 / 2022.08.03
 
 - feat: enable this script to be run directly in environments where the deno path is not set

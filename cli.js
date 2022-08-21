@@ -4,7 +4,7 @@
 // deno-lint-ignore-file
 // This code was bundled using `deno bundle` and it's not recommended to edit it manually
 
-const SCRIPT_VERSION = "0.4.0";
+const SCRIPT_VERSION = "0.4.1";
 const MIN_DENO_VERSION = "1.2.0";
 function checkDenoVersion(version) {
     const requiredVersion = version.split(".").map((n)=>Number(n));
@@ -14,6 +14,115 @@ function checkDenoVersion(version) {
         if (currentVersion[i] < requiredVersion[i]) return false;
     }
     return true;
+}
+class DenoInfo {
+    static execPath = Deno.execPath();
+    static async obtainCacheLocation() {
+        const process = Deno.run({
+            cmd: [
+                this.execPath,
+                "info",
+                "--json",
+                "--unstable"
+            ],
+            stdout: "piped",
+            stderr: "piped"
+        });
+        const [stderr, stdout, status] = await Promise.all([
+            process.stderrOutput(),
+            process.output(),
+            process.status(),
+        ]);
+        let output;
+        if (status.success) {
+            output = new TextDecoder().decode(stdout);
+            process.close();
+        } else {
+            const errorString = new TextDecoder().decode(stderr);
+            console.error(errorString);
+            process.close();
+            Deno.exit(status.code);
+        }
+        const jsonData = JSON.parse(output);
+        const baseDepsPath = jsonData.modulesCache;
+        const baseGenPath = jsonData.typescriptCache;
+        return {
+            baseDepsPath,
+            baseGenPath
+        };
+    }
+    static async obtainModuleInfo(url, errorCallback) {
+        const process = Deno.run({
+            cmd: [
+                this.execPath,
+                "info",
+                "--unstable",
+                url
+            ],
+            env: {
+                NO_COLOR: "1"
+            },
+            stdout: "piped",
+            stderr: "piped"
+        });
+        const [stderr, stdout, status] = await Promise.all([
+            process.stderrOutput(),
+            process.output(),
+            process.status(),
+        ]);
+        if (status.success) {
+            const output = new TextDecoder().decode(stdout);
+            process.close();
+            return output;
+        } else {
+            const errorString = new TextDecoder().decode(stderr);
+            console.error(`\n\n${errorString.trim()}`);
+            errorCallback && errorCallback();
+            process.close();
+            Deno.exit(status.code);
+        }
+    }
+}
+class CacheLocation {
+    baseDepsPath = "";
+    baseGenPath = "";
+    async storeCacheLocation() {
+        const denoInfo = await DenoInfo.obtainCacheLocation();
+        this.baseDepsPath = denoInfo.baseDepsPath;
+        this.baseGenPath = denoInfo.baseGenPath;
+    }
+}
+const location = new CacheLocation();
+Object.seal(location);
+function buildBaseFilePath(url, hash) {
+    const parsedUrl = new URL(url);
+    const protocolDirName = parsedUrl.protocol.slice(0, -1);
+    const portString = parsedUrl.port ? `_PORT${parsedUrl.port}` : "";
+    const hostDirName = parsedUrl.hostname + portString;
+    const pathName = parsedUrl.pathname.slice(1);
+    const depsHashedPath = [
+        location.baseDepsPath,
+        protocolDirName,
+        hostDirName,
+        hash
+    ].join("/");
+    const genHashedPath = [
+        location.baseGenPath,
+        protocolDirName,
+        hostDirName,
+        hash
+    ].join("/");
+    const genUrlPath = [
+        location.baseGenPath,
+        protocolDirName,
+        hostDirName,
+        pathName
+    ].join("/");
+    return {
+        depsHashedPath,
+        genHashedPath,
+        genUrlPath
+    };
 }
 class Semaphore {
     counter;
@@ -44,7 +153,6 @@ class Semaphore {
     }
 }
 function obtainValueFromMetadata(metadataFilePath) {
-    const metadata = {};
     const jsonData = (()=>{
         try {
             const text = Deno.readTextFileSync(metadataFilePath);
@@ -53,9 +161,9 @@ function obtainValueFromMetadata(metadataFilePath) {
             return undefined;
         }
     })();
-    if (jsonData === undefined) return metadata;
-    metadata.url = jsonData.url;
-    metadata.date = (()=>{
+    if (jsonData === undefined) return {};
+    const url = jsonData.url;
+    const date = (()=>{
         try {
             return new Date(jsonData.now.secs_since_epoch * 1000).toISOString();
         } catch (_e) {}
@@ -65,75 +173,70 @@ function obtainValueFromMetadata(metadataFilePath) {
             return undefined;
         }
     })();
-    metadata.location = (()=>{
+    const location = (()=>{
         if (jsonData.headers?.location === undefined) return undefined;
-        const location = jsonData.headers.location;
-        if (isValidUrl(location)) return location;
         try {
-            const url = new URL(jsonData.url);
-            return `${url.origin}${location}`;
+            return new URL(jsonData.headers.location, url).href;
         } catch (_e) {
             return undefined;
         }
     })();
-    metadata.types = (()=>{
+    const types = (()=>{
         if (jsonData.headers?.["x-typescript-types"] === undefined) return undefined;
-        const types = jsonData.headers["x-typescript-types"];
-        if (isValidUrl(types)) return types;
         try {
-            const url = new URL(jsonData.url);
-            return `${url.origin}${types}`;
+            return new URL(jsonData.headers["x-typescript-types"], url).href;
         } catch (_e) {
             return undefined;
         }
     })();
-    return metadata;
+    return {
+        url,
+        date,
+        location,
+        types
+    };
 }
 async function fetchJsonFile(url, timeout = 45000) {
-    try {
-        const res = await (async ()=>{
-            if (checkDenoVersion("1.11.0")) {
-                const controller = new AbortController();
-                const timer = setTimeout(()=>controller.abort(), timeout);
-                const res = await fetch(url, {
-                    signal: controller.signal
-                });
-                clearTimeout(timer);
-                return res;
-            } else {
-                return await fetch(url);
+    const res = await (async ()=>{
+        let timer = 0;
+        try {
+            if (checkDenoVersion("1.11.0") === false) return await fetch(url);
+            const controller = new AbortController();
+            timer = setTimeout(()=>controller.abort(), timeout);
+            return await fetch(url, {
+                signal: controller.signal
+            });
+        } catch (e) {
+            if (e instanceof DOMException && e.name === "AbortError") {
+                const error = new Error("Fetch request has timed out");
+                error.name = "TimeoutError";
+                throw error;
             }
-        })();
-        if (res.ok === false) {
-            throw new Error("Failed to fetch\n" + `Response Status: ${res.status} ${res.statusText}`);
-        }
-        return await res.json();
-    } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") {
-            const error = new Error("Fetch request has timed out");
-            error.name = "TimeoutError";
-            throw error;
-        } else if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
-            const error1 = new Error("The specified resource is not a JSON file");
-            error1.name = "TypeError";
-            throw error1;
-        } else {
             throw e;
+        } finally{
+            timer && clearTimeout(timer);
         }
-    }
-}
-function readJsonFile(path) {
-    try {
-        const text = Deno.readTextFileSync(path);
-        return JSON.parse(text);
-    } catch (e) {
-        if (e.name === "SyntaxError" && e.message.endsWith("not valid JSON")) {
-            const error = new Error("The specified resource is not a JSON file");
+    })();
+    if (res.ok) {
+        try {
+            return await res.json();
+        } catch (_e) {
+            const error = new Error("The specified resource is not a valid JSON file");
             error.name = "TypeError";
             throw error;
-        } else {
-            throw e;
         }
+    }
+    res.body?.cancel();
+    throw new Error("Failed to fetch\n" + `Response Status: ${res.status} ${res.statusText}`);
+}
+function readJsonFile(path) {
+    const text = Deno.readTextFileSync(path);
+    try {
+        return JSON.parse(text);
+    } catch (_e) {
+        const error = new Error("The specified resource is not a valid JSON file");
+        error.name = "TypeError";
+        throw error;
     }
 }
 function isFileExist(path) {
@@ -151,6 +254,8 @@ function isDirectoryExist(path) {
     }
 }
 function isValidUrl(url) {
+    const re = /^(?:blob:|data:|[A-Za-z][A-Za-z0-9.+-]*:\/\/)/;
+    if (re.test(url) === false) return false;
     try {
         new URL(url);
         return true;
@@ -159,26 +264,23 @@ function isValidUrl(url) {
     }
 }
 function formatDateString(dateString) {
-    const validInput = /^\d{1,4}[-/]\d{1,2}(([-/]\d{1,2})?|[-/]\d{1,2}[T ]\d{1,2}((:\d{1,2}){0,2}|(:\d{1,2}){2}\.\d{1,3}))\D*$/;
-    if (validInput.test(dateString) === false) return undefined;
+    const regexpToVerifyDateString = /^\d{1,4}[-/]\d{1,2}(([-/]\d{1,2})?|[-/]\d{1,2}[T ]\d{1,2}((:\d{1,2}){0,2}|(:\d{1,2}){2}\.\d{1,3}))\D*$/;
+    if (regexpToVerifyDateString.test(dateString) === false) return undefined;
     const re = /\d+/g;
     const dateArray = dateString.match(re).map((v)=>Number.parseInt(v, 10));
     dateArray[1] -= 1;
     const dateObject = new Date(Date.UTC(...dateArray));
     return dateObject.toISOString();
 }
-function mergeObject(obj1, obj2) {
+function mergeObject(...objArray) {
     const mergedObj = {};
-    for (const obj of [
-        obj1,
-        obj2
-    ]){
+    for (const obj of objArray){
         for (const [key, value] of Object.entries(obj)){
-            if (mergedObj[key] === undefined) mergedObj[key] = new Set();
+            mergedObj[key] ?? (mergedObj[key] = new Set());
             if (typeof value === "string") {
                 mergedObj[key].add(value);
             } else {
-                value.forEach(mergedObj[key].add, mergedObj[key]);
+                value.forEach(Set.prototype.add, mergedObj[key]);
             }
         }
     }
@@ -187,14 +289,9 @@ function mergeObject(obj1, obj2) {
 function switchObjectKeyAndValue(obj) {
     const switchedObj = {};
     for (const [key, value] of Object.entries(obj)){
-        if (typeof value === "string") {
-            if (switchedObj[value] === undefined) switchedObj[value] = new Set();
-            switchedObj[value].add(key);
-        } else {
-            for (const v of value){
-                if (switchedObj[v] === undefined) switchedObj[v] = new Set();
-                switchedObj[v].add(key);
-            }
+        for (const v of value){
+            switchedObj[v] ?? (switchedObj[v] = new Set());
+            switchedObj[v].add(key);
         }
     }
     return switchedObj;
@@ -203,14 +300,15 @@ function sortOutArgs(args) {
     const flags = {
         delete: false,
         help: false,
+        importMap: false,
         leaves: false,
         missingUrl: false,
-        name: false,
         newer: false,
         older: false,
         quiet: false,
         skipConfirmation: false,
         sortDate: false,
+        url: false,
         uses: false,
         verbose: false,
         version: false,
@@ -237,7 +335,7 @@ function sortOutArgs(args) {
             invalidArgs
         };
     }
-    const availableFlags = {
+    const flagKeyTable = {
         "--delete": "delete",
         "-d": "delete",
         "--help": "help",
@@ -245,9 +343,9 @@ function sortOutArgs(args) {
         "--import-map": "importMap",
         "--leaves": "leaves",
         "--missing-url": "missingUrl",
-        "--name": "name",
-        "-n": "name",
-        "--url": "name",
+        "--name": "url",
+        "-n": "url",
+        "--url": "url",
         "--newer": "newer",
         "--older": "older",
         "--quiet": "quiet",
@@ -272,16 +370,16 @@ function sortOutArgs(args) {
         "version",
     ]);
     let setExclusive = false;
-    let key = "";
+    let key = "url";
     for (const arg of args){
-        if (availableFlags[arg]) {
-            key = availableFlags[arg];
+        if (flagKeyTable[arg]) {
+            key = flagKeyTable[arg];
             if (exclusiveFlags.has(key)) {
                 if (setExclusive === false) {
                     flags[key] = true;
                     setExclusive = true;
                 } else {
-                    key = "";
+                    key = "url";
                 }
             } else {
                 flags[key] = true;
@@ -290,15 +388,11 @@ function sortOutArgs(args) {
         }
         switch(key){
             case "newer":
-                {
-                    target.newer ?? (target.newer = formatDateString(arg) ?? null);
-                    break;
-                }
+                target.newer ?? (target.newer = formatDateString(arg) ?? null);
+                break;
             case "older":
-                {
-                    target.older ?? (target.older = formatDateString(arg) ?? null);
-                    break;
-                }
+                target.older ?? (target.older = formatDateString(arg) ?? null);
+                break;
             case "delete":
                 target.url = arg;
                 break;
@@ -310,12 +404,12 @@ function sortOutArgs(args) {
                 target.url ?? (target.url = arg);
         }
         if (key === "importMap") continue;
-        key = "";
+        key = "url";
     }
-    flags.withPath = flags.delete ? true : flags.withPath;
-    flags.withPath = flags.uses ? false : flags.withPath;
-    flags.verbose = flags.quiet ? false : flags.verbose;
-    invalidArgs.noUrl = (flags.name || flags.delete) && target.url === undefined;
+    flags.delete && (flags.withPath = true);
+    flags.uses && (flags.withPath = false);
+    flags.quiet && (flags.verbose = false);
+    invalidArgs.noUrl = (flags.url || flags.delete) && target.url === undefined;
     invalidArgs.noNewer = flags.newer && target.newer === undefined;
     invalidArgs.noOlder = flags.older && target.older === undefined;
     invalidArgs.invalidNewer = flags.newer && target.newer === null;
@@ -326,116 +420,11 @@ function sortOutArgs(args) {
         invalidArgs
     };
 }
-function displayCachedModuleList(moduleData, optionFlags) {
-    const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
-    const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : 0;
-    const { startBold , endBold  } = (()=>{
-        if (Deno.noColor === false && (optionFlags.withPath || optionFlags.uses)) {
-            return {
-                startBold: "\x1b[1m",
-                endBold: "\x1b[0m"
-            };
-        }
-        return {
-            startBold: "",
-            endBold: ""
-        };
-    })();
-    for (const url of sortedUrlList){
-        const urlString = `${startBold}${url}${endBold}`;
-        const dateString = (()=>{
-            if (optionFlags.withDate) {
-                const padding = " ".repeat(maxUrlLength - url.length + 2);
-                return padding + (moduleData.date(url) ?? "Unknown");
-            } else {
-                return "";
-            }
-        })();
-        console.log(urlString + dateString);
-        if (optionFlags.withPath || optionFlags.uses) {
-            const list = (()=>{
-                switch(true){
-                    case optionFlags.withPath:
-                        return moduleData.relatedFilePath(url);
-                    case optionFlags.uses:
-                        return moduleData.uses(url);
-                    default:
-                        return [];
-                }
-            })();
-            for (const value of list){
-                console.log(` - ${value}`);
-            }
-        }
-    }
-}
-function displayHelp() {
-    const t = " ".repeat(4);
-    console.log(`Deno module cache manager ${SCRIPT_VERSION}\n\n` + `USAGE:\n` + `${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js\n` + `${t}deno-module-cache-manager [OPTIONS]\n\n` + `OPTIONS:\n` + `${t}-d, --delete <MODULE_URL>     ${t}Delete cached module files\n` + `${t}                              ${t}Perform a substring search for MODULE_URL\n` + `${t}                              ${t}and files related to the matched module URLs are objects of deletion\n` + `${t}-h, --help                    ${t}Print help information\n` + `${t}    --import-map <URL>        ${t}Load import map\n` + `${t}                              ${t}One or more URLs or file paths can be specified\n` + `${t}    --leaves                  ${t}Print cached module URLs that are not dependencies of another cached module\n` + `${t}    --missing-url             ${t}Print cached module file paths whose URLs are missing\n` + `${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs\n` + `${t}                              ${t}Perform a substring search for MODULE_URL\n` + `${t}                              ${t}and the matched module URLs are objects of printing\n` + `${t}    --newer <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` + `${t}                              ${t}equal to or newer than <DATE_STRING>\n` + `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` + `${t}    --older <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` + `${t}                              ${t}equal to or older than <DATE_STRING>\n` + `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` + `${t}-q, --quiet                   ${t}Suppress result output\n` + `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` + `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` + `${t}-v, --verbose                 ${t}Print additional information in result output\n` + `${t}-V, --version                 ${t}Print version information\n` + `${t}    --with-date               ${t}Print cached module URLs along with their download date and time\n` + `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them\n` + `${t}-y, --yes                     ${t}Automatically answer yes for confirmation`);
-}
-let baseDepsPath = "";
-async function obtainCacheLocation() {
-    const process = Deno.run({
-        cmd: [
-            Deno.execPath(),
-            "info",
-            "--json",
-            "--unstable"
-        ],
-        stdout: "piped",
-        stderr: "piped"
-    });
-    const [stderr, stdout, status] = await Promise.all([
-        process.stderrOutput(),
-        process.output(),
-        process.status(),
-    ]);
-    let output;
-    if (status.success) {
-        output = new TextDecoder().decode(stdout);
-        process.close();
-    } else {
-        const errorString = new TextDecoder().decode(stderr);
-        console.error(errorString);
-        process.close();
-        Deno.exit(status.code);
-    }
-    const jsonData = JSON.parse(output);
-    return {
-        baseDepsPath: jsonData.modulesCache,
-        baseGenPath: jsonData.typescriptCache
-    };
-}
-let baseGenPath = "";
-function buildBaseFilePath(url, hash) {
-    const parsedUrl = new URL("", url);
-    const protocolDirName = parsedUrl.protocol.slice(0, -1);
-    const portString = parsedUrl.port ? `_PORT${parsedUrl.port}` : "";
-    const hostDirName = parsedUrl.hostname + portString;
-    const pathName = parsedUrl.pathname.slice(1);
-    const depsHashedPath = [
-        baseDepsPath,
-        protocolDirName,
-        hostDirName,
-        hash
-    ].join("/");
-    const genHashedPath = [
-        baseGenPath,
-        protocolDirName,
-        hostDirName,
-        hash
-    ].join("/");
-    const genUrlPath = [
-        baseGenPath,
-        protocolDirName,
-        hostDirName,
-        pathName
-    ].join("/");
-    return {
-        depsHashedPath,
-        genHashedPath,
-        genUrlPath
-    };
+let quietMode = false;
+let verboseMode = false;
+function updateOutputMode(mode) {
+    quietMode = mode.quiet;
+    verboseMode = mode.verbose;
 }
 var ConfirmationId;
 (function(ConfirmationId) {
@@ -454,11 +443,11 @@ var ResultId;
     ResultId["DeletedFile"] = "deletedFile";
 })(ResultId || (ResultId = {}));
 function generateMessage(type) {
-    switch(type.name){
+    switch(type.id){
         case ConfirmationId.Delete:
             switch(type.fileCount){
                 case 0:
-                    throw new Error("There are no files to delete.");
+                    throw new Error("There are no files to delete");
                 case 1:
                     return "\nThis operation cannot be undone.\n" + `Are you sure you want to delete the above ${type.fileCount} file? (y/N): `;
                 default:
@@ -511,7 +500,7 @@ function generateMessage(type) {
         default:
             {
                 const _invalidValue = type;
-                throw new Error(`${_invalidValue} is invalid.`);
+                throw new Error(`${JSON.stringify(_invalidValue)} is invalid`);
             }
     }
 }
@@ -524,43 +513,42 @@ function displayConfirmationMessage(type, skip = false) {
     const input = new TextDecoder().decode(buf.subarray(0, n)).trim();
     return input.toLowerCase() === "y";
 }
-let quietMode = false;
 function displayResultMessage(type) {
     if (quietMode) return;
     const message = generateMessage(type);
     console.log(message);
 }
-let verboseMode = false;
+function displayInvalidArgsMessage(invalidArgs) {
+    invalidArgs.noUrl && displayResultMessage({
+        id: ResultId.ModuleUrlRequired
+    });
+    invalidArgs.noNewer && displayResultMessage({
+        id: ResultId.DateRequired,
+        option: "newer"
+    });
+    invalidArgs.noOlder && displayResultMessage({
+        id: ResultId.DateRequired,
+        option: "older"
+    });
+    invalidArgs.invalidNewer && displayResultMessage({
+        id: ResultId.InvalidDate,
+        option: "newer"
+    });
+    invalidArgs.invalidOlder && displayResultMessage({
+        id: ResultId.InvalidDate,
+        option: "older"
+    });
+}
 function displaySearchCriteria(option, target) {
     if (verboseMode === false) return;
-    let message = "";
-    if (option.missingUrl) {
-        message += ` - Search with option "--missing-url"\n`;
-    }
-    if (option.leaves) {
-        message += ` - Search with option "--leaves"\n`;
-    }
-    if (option.uses) {
-        message += ` - Search with option "--uses"\n`;
-    }
-    if (target.url) {
-        message += ` - Module URL contains "${target.url}"\n`;
-    }
-    if (target.newer) {
-        message += ` - Download date is equal to or newer than "${target.newer}"\n`;
-    }
-    if (target.older) {
-        message += ` - Download date is equal to or older than "${target.older}"\n`;
-    }
-    if (message === "") {
-        message = " - All cached modules\n";
-    }
-    message = `Search criteria:\n${message}`;
-    Deno.stdout.writeSync(new TextEncoder().encode(message));
+    const criteria = (option.missingUrl ? ` - Search with option "--missing-url"\n` : "") + (option.leaves ? ` - Search with option "--leaves"\n` : "") + (option.uses ? ` - Search with option "--uses"\n` : "") + (target.url ? ` - Module URL contains "${target.url}"\n` : "") + (target.newer ? ` - Download date is equal to or newer than "${target.newer}"\n` : "") + (target.older ? ` - Download date is equal to or older than "${target.older}"\n` : "") || " - All cached modules";
+    const message = `Search criteria:\n${criteria}`.trimEnd();
+    console.log(message);
 }
 function displaySearchLocation() {
     if (verboseMode === false) return;
-    console.log(`Search locations:\n - ${baseDepsPath}\n - ${baseGenPath}`);
+    const message = "Search locations:\n" + ` - ${location.baseDepsPath}\n` + ` - ${location.baseGenPath}`;
+    console.log(message);
 }
 function displayCursor(show = true) {
     if (checkDenoVersion("1.19.0") === false) return;
@@ -583,47 +571,14 @@ function displayCursor(show = true) {
         Deno.addSignalListener("SIGTERM", showCursor);
     }
 }
-async function obtainDenoInfo(url, execPath) {
-    const process = Deno.run({
-        cmd: [
-            execPath,
-            "info",
-            "--unstable",
-            url
-        ],
-        env: {
-            NO_COLOR: "1"
-        },
-        stdout: "piped",
-        stderr: "piped"
-    });
-    const [stderr, stdout, status] = await Promise.all([
-        process.stderrOutput(),
-        process.output(),
-        process.status(),
-    ]);
-    if (status.success) {
-        const output = new TextDecoder().decode(stdout);
-        process.close();
-        return output;
-    } else {
-        const errorString = new TextDecoder().decode(stderr);
-        console.error(`\n\n${errorString.trim()}`);
-        displayCursor();
-        process.close();
-        Deno.exit(status.code);
-    }
-}
 function displayProgress(current, total, suffix = "done") {
     if (quietMode) return;
     const digits = String(total).length;
     const text = ` * ${String(current).padStart(digits, " ")} / ${total} ${suffix}`;
-    if (current === 0) {
-        displayCursor(false);
-    }
+    if (current === 0) displayCursor(false);
     Deno.stdout.writeSync(new TextEncoder().encode(`${text}\r`));
     if (current >= total) {
-        Deno.stdout.writeSync(new TextEncoder().encode("\r\x1b[2K"));
+        Deno.stdout.writeSync(new TextEncoder().encode("\x1b[2K"));
         displayCursor(true);
     }
 }
@@ -631,21 +586,20 @@ async function obtainDepsData(urlList) {
     const collectedData = {};
     const regexpToFilterUrl = (()=>{
         if (checkDenoVersion("1.4.0")) {
-            return new RegExp("^\\S{3}\\shttps?://");
+            return /^\S{3}\shttps?:\/\//;
         } else {
-            return new RegExp("^\\s{2}\\S{3}\\shttps?://");
+            return /^\s{2}\S{3}\shttps?:\/\//;
         }
     })();
-    const regexpToRemoveBeforeUrl = new RegExp("^.*?\\shttp");
-    const regexpToRemoveAfterUrl = new RegExp("\\s.*$");
-    const execPath = Deno.execPath();
+    const regexpToRemoveBeforeUrl = /^.*?\shttp/;
+    const regexpToRemoveAfterUrl = /\s.*$/;
     let counter = 0;
     const total = urlList.length;
     displayProgress(counter, total, "modules checked");
     const semaphore = new Semaphore(5);
     await Promise.all(urlList.map(async (url)=>{
         await semaphore.acquire();
-        const denoInfo = await obtainDenoInfo(url, execPath);
+        const denoInfo = await DenoInfo.obtainModuleInfo(url, displayCursor);
         const depsUrlList = new Set(denoInfo.split("\n").filter((line)=>regexpToFilterUrl.test(line)).map((line)=>{
             return line.trim().replace(regexpToRemoveBeforeUrl, "http").replace(regexpToRemoveAfterUrl, "");
         }));
@@ -655,59 +609,45 @@ async function obtainDepsData(urlList) {
     }));
     return collectedData;
 }
-function obtainUrlFromImportMapData(jsonData, ignoreError = false) {
+function extractUrlFromImportMapData(jsonData, ignoreError = false) {
     const collectedList = new Set();
-    const isKeyValueObject = (data)=>{
-        return typeof data !== "object" || data === null || Array.isArray(data);
-    };
+    const isNotKeyValueObject = (data)=>typeof data !== "object" || data === null || Array.isArray(data);
     (()=>{
         if (jsonData.imports === undefined) return;
-        if (isKeyValueObject(jsonData.imports)) {
+        if (isNotKeyValueObject(jsonData.imports)) {
             if (ignoreError) return;
             throw new TypeError(`The "imports" top-level key should be a JSON object\n` + `"imports":${JSON.stringify(jsonData.imports)}`);
         }
-        for (const v of Object.values(jsonData.imports)){
-            if (typeof v === "string") {
-                if (isValidUrl(v)) collectedList.add(v);
-            }
-        }
+        Object.values(jsonData.imports).filter((v)=>typeof v === "string" && isValidUrl(v)).forEach(Set.prototype.add, collectedList);
     })();
     (()=>{
         if (jsonData.scopes === undefined) return;
-        if (isKeyValueObject(jsonData.scopes)) {
+        if (isNotKeyValueObject(jsonData.scopes)) {
             if (ignoreError) return;
             throw new TypeError(`The "scopes" top-level key should be a JSON object\n` + `"scopes":${JSON.stringify(jsonData.scopes)}`);
         }
         for (const [prefix, map] of Object.entries(jsonData.scopes)){
-            if (isKeyValueObject(map)) {
+            if (isNotKeyValueObject(map)) {
                 if (ignoreError) continue;
                 throw new TypeError(`The value of the scope should be a JSON object\n` + `"${prefix}":${JSON.stringify(map)} in ` + `"scopes":${JSON.stringify(jsonData.scopes)}`);
             }
-            for (const v of Object.values(map)){
-                if (typeof v === "string") {
-                    if (isValidUrl(v)) collectedList.add(v);
-                }
-            }
+            Object.values(map).filter((v)=>typeof v === "string" && isValidUrl(v)).forEach(Set.prototype.add, collectedList);
         }
     })();
     return collectedList;
 }
-async function obtainDepsDataFromRemoteImportMap(importMapUrlList) {
+async function obtainDepsDataFromSpecifiedImportMap(importMapLocationList) {
     const collectedData = {};
-    for (const url of importMapUrlList){
+    for (const loc of importMapLocationList){
         try {
             const jsonData = await (async ()=>{
-                if (isValidUrl(url)) {
-                    return await fetchJsonFile(url);
-                }
-                if (isFileExist(url)) {
-                    return readJsonFile(url);
-                }
+                if (isValidUrl(loc)) return await fetchJsonFile(loc);
+                if (isFileExist(loc)) return readJsonFile(loc);
                 throw new Error("The specified import map URL or path is invalid");
             })();
-            collectedData[url] = obtainUrlFromImportMapData(jsonData);
+            collectedData[loc] = extractUrlFromImportMapData(jsonData);
         } catch (e) {
-            console.error("Loading import map:", url);
+            console.error(`Loading import map: ${loc}`);
             console.error(e);
             Deno.exit(1);
         }
@@ -718,16 +658,12 @@ function obtainDepsDataFromCachedImportMap(jsonFileList) {
     const collectedData = {};
     for (const file of jsonFileList){
         const importMapFilePath = buildBaseFilePath(file.url, file.hash).depsHashedPath;
-        const jsonData = (()=>{
-            try {
-                const text = Deno.readTextFileSync(importMapFilePath);
-                return JSON.parse(text);
-            } catch (_e) {
-                return undefined;
-            }
-        })();
-        if (jsonData === undefined) continue;
-        collectedData[file.url] = obtainUrlFromImportMapData(jsonData, true);
+        try {
+            const jsonData = readJsonFile(importMapFilePath);
+            collectedData[file.url] = extractUrlFromImportMapData(jsonData, true);
+        } catch (_e) {
+            continue;
+        }
     }
     return collectedData;
 }
@@ -737,7 +673,7 @@ class ModuleData {
         return Object.keys(this.data);
     }
     get targetedUrlList() {
-        return Object.keys(this.data).filter((v)=>this.data[v].target);
+        return this.allUrlList.filter((v)=>this.data[v].target);
     }
     get sortedUrlList() {
         return this.targetedUrlList.sort();
@@ -761,13 +697,13 @@ class ModuleData {
     }
     get locationDataSpecifiedInHeader() {
         return this.allUrlList.filter((v)=>this.data[v].location).reduce((object, v)=>{
-            object[v] = this.data[v].location ?? "";
+            object[v] = this.data[v].location;
             return object;
         }, {});
     }
     get typesDataSpecifiedInHeader() {
         return this.allUrlList.filter((v)=>this.data[v].types).reduce((object, v)=>{
-            object[v] = this.data[v].types ?? "";
+            object[v] = this.data[v].types;
             return object;
         }, {});
     }
@@ -837,75 +773,54 @@ class ModuleData {
         ];
         for (const url of this.targetedUrlList){
             const { depsHashedPath , genHashedPath , genUrlPath ,  } = buildBaseFilePath(url, this.data[url].hash);
-            const pathList = [];
-            for (const ext of extensionsInDeps){
-                pathList.push(depsHashedPath + ext);
-            }
-            for (const path of [
+            const depsPathList = extensionsInDeps.map((ext)=>depsHashedPath + ext);
+            const genPathList = [
                 genHashedPath,
                 genUrlPath
-            ]){
-                for (const ext1 of extensionsInGen){
-                    pathList.push(path + ext1);
-                }
-            }
-            this.data[url].relatedFilePath = pathList.filter((path)=>isFileExist(path));
+            ].flatMap((path)=>extensionsInGen.map((ext)=>path + ext));
+            this.data[url].relatedFilePath = [
+                ...depsPathList,
+                ...genPathList
+            ].filter((path)=>isFileExist(path));
         }
     }
-    async collectUsesModule(importMapUrlList = new Set()) {
+    async collectUsesModule(importMapLocationList) {
         const cachedJsonFileList = this.cachedJsonFileUrlAndHashList;
-        const mapDeps1 = obtainDepsDataFromCachedImportMap(cachedJsonFileList);
-        const mapDeps2 = await obtainDepsDataFromRemoteImportMap(importMapUrlList);
-        const importMapData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
+        const mapDeps1 = cachedJsonFileList.length ? obtainDepsDataFromCachedImportMap(cachedJsonFileList) : {};
+        const mapDeps2 = importMapLocationList ? await obtainDepsDataFromSpecifiedImportMap(importMapLocationList) : {};
+        const mapsData = switchObjectKeyAndValue(mergeObject(mapDeps1, mapDeps2));
         const deps1 = await obtainDepsData(this.allUrlList);
         const deps2 = this.locationDataSpecifiedInHeader;
         const deps3 = this.typesDataSpecifiedInHeader;
-        const mergedDeps = mergeObject(deps1, mergeObject(deps2, deps3));
-        const usesData = switchObjectKeyAndValue(mergedDeps);
+        const usesData = switchObjectKeyAndValue(mergeObject(deps1, deps2, deps3));
         for (const url of this.targetedUrlList){
-            this.data[url].uses = usesData[url] ? [
-                ...usesData[url]
-            ] : [];
-            const applicableImportMapData = new Set();
-            for (const importMapUrl of Object.keys(importMapData)){
-                if (url.startsWith(importMapUrl)) {
-                    importMapData[importMapUrl].forEach((v)=>applicableImportMapData.add(v));
+            const collectedDepsData = usesData[url] ?? new Set();
+            for (const [key, value] of Object.entries(mapsData)){
+                if (url.startsWith(key)) {
+                    value.forEach(Set.prototype.add, collectedDepsData);
                 }
             }
-            this.data[url].uses = this.data[url].uses.concat(...applicableImportMapData);
+            this.data[url].uses = [
+                ...collectedDepsData
+            ];
         }
     }
-    async extractLeavesModule(importMapUrlList) {
-        await this.collectUsesModule(importMapUrlList);
+    async extractLeavesModule(importMapLocationList) {
+        await this.collectUsesModule(importMapLocationList);
         for (const url of this.targetedUrlList){
-            if (this.data[url].uses?.length ?? 0 > 0) {
+            if (this.data[url].uses?.length) {
                 this.data[url].target = false;
             }
         }
     }
 }
-function collectAllHashedFilePath(type = "") {
-    const baseDirList = (()=>{
-        switch(type){
-            case "modulesCache":
-                return [
-                    `${baseDepsPath}/https`,
-                    `${baseDepsPath}/http`,
-                ];
-            case "typescriptCache":
-                return [
-                    `${baseGenPath}/https`,
-                    `${baseGenPath}/http`,
-                ];
-            default:
-                return [
-                    `${baseDepsPath}/https`,
-                    `${baseDepsPath}/http`,
-                    `${baseGenPath}/https`,
-                    `${baseGenPath}/http`,
-                ];
-        }
-    })();
+function collectAllHashedFilePath() {
+    const baseDirList = [
+        `${location.baseDepsPath}/https`,
+        `${location.baseDepsPath}/http`,
+        `${location.baseGenPath}/https`,
+        `${location.baseGenPath}/http`,
+    ];
     const hostDirList = [];
     for (const baseDir of baseDirList){
         if (isDirectoryExist(baseDir) === false) continue;
@@ -924,138 +839,151 @@ function collectAllHashedFilePath(type = "") {
     }
     return pathList;
 }
-function deleteFile(moduleData) {
-    const filePathList = moduleData.relatedFilePathList;
-    for (const path of filePathList){
-        try {
-            Deno.removeSync(path);
-            displayResultMessage({
-                name: ResultId.DeletedFile,
-                filePath: path
-            });
-        } catch (e) {
-            console.error(e);
-            Deno.exit(1);
-        }
-    }
-}
-if (checkDenoVersion(MIN_DENO_VERSION) === false) {
-    displayResultMessage({
-        name: ResultId.VersionError,
-        version: MIN_DENO_VERSION
-    });
-    Deno.exit();
-}
-({ baseDepsPath , baseGenPath  } = await obtainCacheLocation());
-const { optionFlags , target , invalidArgs  } = sortOutArgs(Deno.args);
-if (optionFlags.version) {
-    displayResultMessage({
-        name: ResultId.Version,
-        version: SCRIPT_VERSION
-    });
-    Deno.exit();
-}
-if (optionFlags.help) {
-    displayHelp();
-    Deno.exit();
-}
-quietMode = optionFlags.quiet;
-verboseMode = optionFlags.verbose;
 function collectPathOfFileWithMissingURL() {
     const pathList = collectAllHashedFilePath();
     const metadataExt = ".metadata.json";
-    const regexpToRemoveExt = new RegExp(/\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/);
+    const regexpToRemoveExt = /\.d\.ts$|\.js$|\.js\.map$|\.buildinfo$|\.meta$/;
     const pathListWithMissingURL = [];
     for (const path of pathList){
-        if (path.startsWith(baseDepsPath) && path.endsWith(".metadata.json")) continue;
+        if (path.startsWith(location.baseDepsPath) && path.endsWith(".metadata.json")) continue;
         const adjustedPath = path.replace(regexpToRemoveExt, "");
-        const depsMetadataFilePath = adjustedPath.replace(baseGenPath, baseDepsPath) + metadataExt;
+        const depsMetadataFilePath = adjustedPath.replace(location.baseGenPath, location.baseDepsPath) + metadataExt;
         if (isFileExist(depsMetadataFilePath)) continue;
         pathListWithMissingURL.push(path);
     }
     return pathListWithMissingURL;
 }
-if (optionFlags.missingUrl) {
-    const filePathList = collectPathOfFileWithMissingURL();
-    const fileCount = filePathList.length;
-    filePathList.forEach((path)=>console.log(path));
-    displayResultMessage({
-        name: ResultId.FoundFile,
-        fileCount
+function displayCachedModuleList(moduleData, optionFlags) {
+    const sortedUrlList = optionFlags.sortDate ? moduleData.sortedUrlListByDate : moduleData.sortedUrlList;
+    const maxUrlLength = optionFlags.withDate ? moduleData.maxUrlStringLength : 0;
+    const { startBold , endBold  } = (()=>{
+        if (Deno.noColor === false && (optionFlags.withPath || optionFlags.uses)) {
+            return {
+                startBold: "\x1b[1m",
+                endBold: "\x1b[0m"
+            };
+        }
+        return {
+            startBold: "",
+            endBold: ""
+        };
+    })();
+    for (const url of sortedUrlList){
+        const urlString = `${startBold}${url}${endBold}`;
+        const dateString = (()=>{
+            if (optionFlags.withDate) {
+                const padding = " ".repeat(maxUrlLength - url.length + 2);
+                return padding + (moduleData.date(url) ?? "Unknown");
+            }
+            return "";
+        })();
+        console.log(urlString + dateString);
+        if (optionFlags.withPath || optionFlags.uses) {
+            const list = (()=>{
+                switch(true){
+                    case optionFlags.withPath:
+                        return moduleData.relatedFilePath(url);
+                    case optionFlags.uses:
+                        return moduleData.uses(url);
+                    default:
+                        return [];
+                }
+            })();
+            list.forEach((v)=>console.log(` - ${v}`));
+        }
+    }
+}
+function deleteFile(pathList, callback) {
+    pathList.forEach((path)=>{
+        Deno.removeSync(path);
+        callback && callback(path);
     });
-    displaySearchCriteria(optionFlags, {});
-    displaySearchLocation();
-    Deno.exit();
 }
-if (Object.values(invalidArgs).includes(true)) {
-    if (invalidArgs.noUrl) {
-        displayResultMessage({
-            name: ResultId.ModuleUrlRequired
-        });
-    }
-    if (invalidArgs.noNewer) {
-        displayResultMessage({
-            name: ResultId.DateRequired,
-            option: "newer"
-        });
-    }
-    if (invalidArgs.noOlder) {
-        displayResultMessage({
-            name: ResultId.DateRequired,
-            option: "older"
-        });
-    }
-    if (invalidArgs.invalidNewer) {
-        displayResultMessage({
-            name: ResultId.InvalidDate,
-            option: "newer"
-        });
-    }
-    if (invalidArgs.invalidOlder) {
-        displayResultMessage({
-            name: ResultId.InvalidDate,
-            option: "older"
-        });
-    }
-    Deno.exit();
+function displayHelp(version) {
+    const t = " ".repeat(4);
+    console.log(`Deno module cache manager ${version}\n\n` + `USAGE:\n` + `${t}deno install --allow-run --allow-read --allow-write -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js\n` + `${t}deno-module-cache-manager [OPTIONS]\n\n` + `OPTIONS:\n` + `${t}-d, --delete <MODULE_URL>     ${t}Delete cached module files\n` + `${t}                              ${t}Perform a substring search for MODULE_URL\n` + `${t}                              ${t}and files related to the matched module URLs are objects of deletion\n` + `${t}-h, --help                    ${t}Print help information\n` + `${t}    --import-map <URL>        ${t}Load import map\n` + `${t}                              ${t}One or more URLs or file paths can be specified\n` + `${t}    --leaves                  ${t}Print cached module URLs that are not dependencies of another cached module\n` + `${t}    --missing-url             ${t}Print cached module file paths whose URLs are missing\n` + `${t}-n, --name, --url <MODULE_URL>${t}Print cached module URLs\n` + `${t}                              ${t}Perform a substring search for MODULE_URL\n` + `${t}                              ${t}and the matched module URLs are objects of printing\n` + `${t}    --newer <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` + `${t}                              ${t}equal to or newer than <DATE_STRING>\n` + `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` + `${t}    --older <DATE_STRING>     ${t}Print cached module URLs whose download date and time is\n` + `${t}                              ${t}equal to or older than <DATE_STRING>\n` + `${t}                              ${t}The format of <DATE_STRING> is like yyyy-MM-dd, yyyy-MM-ddTHH:mm:ss, etc.\n` + `${t}-q, --quiet                   ${t}Suppress result output\n` + `${t}    --sort-date               ${t}Print cached module URLs in order of their download date and time\n` + `${t}    --uses                    ${t}Print cached module URLs along with other cached modules depending on them\n` + `${t}-v, --verbose                 ${t}Print additional information in result output\n` + `${t}-V, --version                 ${t}Print version information\n` + `${t}    --with-date               ${t}Print cached module URLs along with their download date and time\n` + `${t}    --with-path               ${t}Print cached module URLs along with paths of files related to them\n` + `${t}-y, --yes                     ${t}Automatically answer yes for confirmation`);
 }
-if (optionFlags.leaves || optionFlags.uses) {
-    displayConfirmationMessage({
-        name: ConfirmationId.LongTime
-    }, optionFlags.skipConfirmation) || Deno.exit();
-}
-const moduleData = new ModuleData();
-moduleData.collectModule(baseDepsPath, target);
-if (optionFlags.leaves) await moduleData.extractLeavesModule(target.importMap);
-const moduleCount = moduleData.targetedUrlListLength;
-if (moduleCount === 0) {
+async function main() {
+    if (checkDenoVersion(MIN_DENO_VERSION) === false) {
+        displayResultMessage({
+            id: ResultId.VersionError,
+            version: MIN_DENO_VERSION
+        });
+        Deno.exit();
+    }
+    const { optionFlags , target , invalidArgs  } = sortOutArgs(Deno.args);
+    if (optionFlags.version) {
+        displayResultMessage({
+            id: ResultId.Version,
+            version: SCRIPT_VERSION
+        });
+        Deno.exit();
+    }
+    if (optionFlags.help) {
+        displayHelp(SCRIPT_VERSION);
+        Deno.exit();
+    }
+    await location.storeCacheLocation();
+    updateOutputMode({
+        quiet: optionFlags.quiet,
+        verbose: optionFlags.verbose
+    });
+    if (optionFlags.missingUrl) {
+        const filePathList = collectPathOfFileWithMissingURL();
+        const fileCount = filePathList.length;
+        filePathList.forEach((path)=>console.log(path));
+        displayResultMessage({
+            id: ResultId.FoundFile,
+            fileCount
+        });
+        displaySearchCriteria(optionFlags, {});
+        displaySearchLocation();
+        Deno.exit();
+    }
+    if (Object.values(invalidArgs).includes(true)) {
+        displayInvalidArgsMessage(invalidArgs);
+        Deno.exit();
+    }
+    if (optionFlags.leaves || optionFlags.uses) {
+        displayConfirmationMessage({
+            id: ConfirmationId.LongTime
+        }, optionFlags.skipConfirmation) || Deno.exit();
+    }
+    const moduleData = new ModuleData();
+    moduleData.collectModule(location.baseDepsPath, target);
+    if (optionFlags.leaves) await moduleData.extractLeavesModule(target.importMap);
+    const moduleCount = moduleData.targetedUrlListLength;
+    if (moduleCount === 0) {
+        displayResultMessage({
+            id: ResultId.FoundModule,
+            moduleCount
+        });
+        displaySearchCriteria(optionFlags, target);
+        displaySearchLocation();
+        Deno.exit();
+    }
+    if (optionFlags.withPath) moduleData.collectRelatedFilePath();
+    if (optionFlags.uses) await moduleData.collectUsesModule(target.importMap);
+    if (optionFlags.delete) {
+        optionFlags.skipConfirmation || displayCachedModuleList(moduleData, optionFlags);
+        displayConfirmationMessage({
+            id: ConfirmationId.Delete,
+            fileCount: moduleData.relatedFilePathListLength
+        }, optionFlags.skipConfirmation) && deleteFile(moduleData.relatedFilePathList, (filePath)=>{
+            displayResultMessage({
+                id: ResultId.DeletedFile,
+                filePath
+            });
+        });
+        Deno.exit();
+    }
+    displayCachedModuleList(moduleData, optionFlags);
     displayResultMessage({
-        name: ResultId.FoundModule,
-        moduleCount
+        id: ResultId.FoundModule,
+        moduleCount,
+        fileCount: optionFlags.withPath ? moduleData.relatedFilePathListLength : undefined
     });
     displaySearchCriteria(optionFlags, target);
     displaySearchLocation();
-    Deno.exit();
 }
-if (optionFlags.withPath) moduleData.collectRelatedFilePath();
-if (optionFlags.uses) await moduleData.collectUsesModule(target.importMap);
-if (optionFlags.delete) {
-    optionFlags.skipConfirmation || displayCachedModuleList(moduleData, optionFlags);
-    displayConfirmationMessage({
-        name: ConfirmationId.Delete,
-        fileCount: moduleData.relatedFilePathListLength
-    }, optionFlags.skipConfirmation) && deleteFile(moduleData);
-    Deno.exit();
-}
-displayCachedModuleList(moduleData, optionFlags);
-displayResultMessage({
-    name: ResultId.FoundModule,
-    moduleCount,
-    fileCount: optionFlags.withPath ? moduleData.relatedFilePathListLength : undefined
-});
-displaySearchCriteria(optionFlags, target);
-displaySearchLocation();
-export { baseDepsPath as baseDepsPath };
-export { baseGenPath as baseGenPath };
-export { quietMode as quietMode };
-export { verboseMode as verboseMode };
+main();
