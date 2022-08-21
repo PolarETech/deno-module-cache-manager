@@ -9,12 +9,10 @@ CLI tool to manage Deno cached modules which are stored in DENO_DIR by remote im
 - Print file paths of cached modules
 - Print download date and time of chached modules
 - Search by download date and time of cached modules
-- Print which modules depend on it (*)
+- Print which modules depend on it
 - Delete cached module files by specifying URL
-- List cached modules that are not dependencies of another cached module (*)
+- List cached modules that are not dependencies of another cached module
 - List file paths of cached modules whose URLs are missing
-
-*\* Import maps are now supported.*
 
 ## Requirements
 
@@ -28,14 +26,19 @@ Install the script with the following command:
 deno install --allow-run --allow-read --allow-write --allow-net -n deno-module-cache-manager https://raw.githubusercontent.com/PolarETech/deno-module-cache-manager/main/cli.js
 ```
 
-*\* --allow-write permission is required by the delete feature.*
-
-*\* --allow-net permission is required by the import maps feature.*
-
 ___NOTE:___
 
 The directory where the script is installed must be added to your $PATH.  
 For more information, please refer to the [Deno Manual](https://deno.land/manual/tools/script_installer).
+
+### Required Permissions
+
+| Permissions | Level    | Purpose                                      |
+| ----------- | -------- | -------------------------------------------- |
+| run         | must     | To run the "deno info" command in the script |
+| read        | must     | To read cached module files                  |
+| write       | optional | To delete cached module files                |
+| net         | optional | To fetch import map files on remote servers  |
 
 ## Upgrade
 
