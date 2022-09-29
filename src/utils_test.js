@@ -301,6 +301,7 @@ Deno.test({
   async fn(t) {
     // test server listener
     const server = Deno.listen({ port: 8088 });
+    const sleep = (msec = 10) => new Promise((resolve) => setTimeout(resolve, msec));
 
     await t.step({
       name: "fetch json file #5 - HTTP Timeout",
@@ -311,7 +312,8 @@ Deno.test({
         // test server connection
         (async () => {
           const conn = await server.accept();
-          setTimeout(() => conn.close(), timeout);
+          await sleep(timeout);
+          conn.close();
         })();
 
         await assertRejects(
@@ -319,6 +321,9 @@ Deno.test({
           Error,
           "Fetch request has timed out",
         );
+
+        // Prevent the test from terminating before the HTTP connection is closed
+        await sleep();
       },
     });
 
@@ -334,6 +339,9 @@ Deno.test({
           const requestEvent = await httpConn.nextRequest();
           const res = new Response("", { status: 404, statusText: "Not Found" });
           await requestEvent.respondWith(res);
+          // Prevent the connection from closing before
+          // completing the send and receive response.
+          await sleep();
           httpConn.close();
         })();
 
@@ -342,6 +350,9 @@ Deno.test({
           Error,
           "Failed to fetch\nResponse Status: 404 Not Found",
         );
+
+        // Prevent the test from terminating before the HTTP connection is closed
+        await sleep();
       },
     });
 
