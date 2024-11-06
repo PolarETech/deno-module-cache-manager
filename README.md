@@ -7,7 +7,7 @@ CLI tool to manage Deno cached modules which are stored in DENO_DIR by remote im
 - List cached module URLs
 - Substring search of cached module URLs
 - Print file paths of cached modules
-- Print download date and time of chached modules
+- Print download date and time of cached modules
 - Search by download date and time of cached modules
 - Print which modules depend on it
 - Delete cached module files by specifying URL
@@ -16,7 +16,9 @@ CLI tool to manage Deno cached modules which are stored in DENO_DIR by remote im
 
 ## Requirements
 
-Deno version 1.2.0 or later.
+Deno version __^1.2.0__.
+
+___Deno version 2.x.x are currently not supported___.
 
 ## Installation
 
