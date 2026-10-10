@@ -18,7 +18,7 @@ CLI tool to manage Deno cached modules which are stored in DENO_DIR by remote im
 
 Deno version __^1.2.0__.
 
-___Deno version 2.x.x are currently not supported___.
+___Only Deno version 1 is supported.___
 
 ## Installation
 
